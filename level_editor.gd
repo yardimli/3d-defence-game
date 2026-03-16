@@ -12,6 +12,7 @@ var grid_data := {}
 var preview_buttons :=[]
 var ghost_instance: Node3D = null
 var placement_rotation_y := 0.0
+var is_painting := false # NEW: Flag to track if the user is holding the mouse to "paint" tiles.
 
 # --- Nodes ---
 var placed_models_container: Node3D
@@ -84,7 +85,6 @@ func _setup_scene_nodes():
 	cursor.mesh.surface_set_material(0, mat)
 	add_child(cursor)
 
-# MODIFIED: Added a delete button to the top UI bar
 func _setup_ui():
 	var canvas = CanvasLayer.new()
 	add_child(canvas)
@@ -108,13 +108,11 @@ func _setup_ui():
 	btn_rotate.pressed.connect(_rotate_placement)
 	top_hbox.add_child(btn_rotate)
 
-	# NEW: Button to delete the model under the cursor
 	var btn_delete = Button.new()
 	btn_delete.text = " Delete (D) "
 	btn_delete.pressed.connect(_delete_model_at_cursor)
 	top_hbox.add_child(btn_delete)
 
-	# Fixed Right Scrollable Panel Positioning
 	ui_panel = PanelContainer.new()
 	canvas.add_child(ui_panel)
 	
@@ -302,21 +300,17 @@ func _rotate_placement():
 		ghost_instance.rotation_degrees.y = placement_rotation_y
 	print("Placement rotation set to: ", placement_rotation_y)
 
-# NEW: Function to delete a model at the current cursor position
 func _delete_model_at_cursor():
 	var grid_pos = Vector2(cursor.position.x, cursor.position.z)
 	
-	# Check if a model exists at this grid position
 	if grid_data.has(grid_pos):
 		var model_to_delete = grid_data[grid_pos]
 		
-		# Ensure the node is valid before trying to delete it
 		if is_instance_valid(model_to_delete):
 			model_to_delete.queue_free()
-			grid_data.erase(grid_pos) # Remove the entry from our data dictionary
+			grid_data.erase(grid_pos)
 			print("Deleted model at ", grid_pos)
 		else:
-			# Clean up invalid entry if it exists
 			grid_data.erase(grid_pos)
 	else:
 		print("No model to delete at ", grid_pos)
@@ -324,7 +318,7 @@ func _delete_model_at_cursor():
 # ==========================================
 # INPUT & CAMERA CONTROLS
 # ==========================================
-# MODIFIED: Added 'D' key for deletion
+# MODIFIED: Added logic for "painting" with the left mouse button.
 func _unhandled_input(event):
 	var mouse_pos = get_viewport().get_mouse_position()
 
@@ -337,15 +331,18 @@ func _unhandled_input(event):
 			_rotate_placement()
 			get_viewport().set_input_as_handled()
 			return
-		# NEW: Handle deletion with the 'D' key
 		if event.keycode == KEY_D:
 			_delete_model_at_cursor()
 			get_viewport().set_input_as_handled()
 			return
 
 	if event is InputEventMouseMotion:
-		# Always update cursor position on mouse motion for immediate feedback
 		_update_cursor(mouse_pos)
+
+		# NEW: If is_painting is true, place a model every time the mouse moves.
+		if is_painting:
+			if selected_model_path != "" and not Input.is_key_pressed(KEY_SHIFT):
+				_place_model()
 
 		if Input.is_mouse_button_pressed(MOUSE_BUTTON_MIDDLE) or (Input.is_key_pressed(KEY_SHIFT) and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)):
 			if ui_panel.get_global_rect().has_point(mouse_pos):
@@ -381,11 +378,16 @@ func _unhandled_input(event):
 			cam_zoom += 1.5
 		cam_zoom = clamp(cam_zoom, 2.0, 60.0)
 
-		# MODIFIED: Changed logic slightly for clarity. Click now only places a model.
-		# Cursor position is now always updated on mouse motion.
-		if event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
-			if selected_model_path != "" and not event.shift_pressed:
-				_place_model()
+		# MODIFIED: Handle the start and end of a "painting" action.
+		if event.button_index == MOUSE_BUTTON_LEFT:
+			if event.pressed:
+				# If a model is selected and we are not panning (shift key), start painting.
+				if selected_model_path != "" and not event.shift_pressed:
+					is_painting = true
+					_place_model() # Place the first model immediately on click.
+			else:
+				# When the left mouse button is released, stop painting.
+				is_painting = false
 
 func _update_cursor(mouse_pos: Vector2):
 	var origin = camera.project_ray_origin(mouse_pos)
@@ -406,6 +408,10 @@ func _place_model():
 	var grid_pos = Vector2(cursor.position.x, cursor.position.z)
 	
 	if grid_data.has(grid_pos) and is_instance_valid(grid_data[grid_pos]):
+		# OPTIMIZATION: If the same model is already here, don't do anything.
+		if grid_data[grid_pos].get_meta("model_path") == selected_model_path and \
+		abs(grid_data[grid_pos].rotation_degrees.y - placement_rotation_y) < 0.1:
+			return
 		grid_data[grid_pos].queue_free()
 
 	var scene = load(selected_model_path)
