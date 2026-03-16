@@ -12,7 +12,7 @@ var grid_data := {}
 var preview_buttons :=[]
 var ghost_instance: Node3D = null
 var placement_rotation_y := 0.0
-var is_painting := false # NEW: Flag to track if the user is holding the mouse to "paint" tiles.
+var is_painting := false
 
 # --- Nodes ---
 var placed_models_container: Node3D
@@ -21,6 +21,16 @@ var model_list: VBoxContainer
 var camera_pivot: Node3D
 var camera: Camera3D
 var ui_panel: PanelContainer
+var sun_light: DirectionalLight3D
+var sun_config_dialog: Window
+var canvas: CanvasLayer # NEW: Make the CanvasLayer a member variable.
+var sun_pos_x_edit: LineEdit
+var sun_pos_y_edit: LineEdit
+var sun_pos_z_edit: LineEdit
+var sun_target_x_edit: LineEdit
+var sun_target_y_edit: LineEdit
+var sun_target_z_edit: LineEdit
+
 
 # --- Materials ---
 var ghost_material: StandardMaterial3D
@@ -34,6 +44,7 @@ func _ready():
 	_load_config()
 	_setup_materials()
 	_setup_scene_nodes()
+	_setup_lighting()
 	_setup_ui()
 	_load_models()
 
@@ -56,6 +67,13 @@ func _load_config():
 	
 	if not DirAccess.dir_exists_absolute(models_folder):
 		DirAccess.make_dir_absolute(models_folder)
+
+func _setup_lighting():
+	sun_light = DirectionalLight3D.new()
+	sun_light.name = "SunLight"
+	sun_light.shadow_enabled = true
+	sun_light.rotation_degrees = Vector3(-50, -30, 0)
+	add_child(sun_light)
 
 func _setup_materials():
 	# Create the transparent "hologram" material for the cursor ghost
@@ -86,7 +104,8 @@ func _setup_scene_nodes():
 	add_child(cursor)
 
 func _setup_ui():
-	var canvas = CanvasLayer.new()
+	# MODIFIED: Assign to the member variable instead of a local one.
+	canvas = CanvasLayer.new()
 	add_child(canvas)
 
 	var top_hbox = HBoxContainer.new()
@@ -113,6 +132,11 @@ func _setup_ui():
 	btn_delete.pressed.connect(_delete_model_at_cursor)
 	top_hbox.add_child(btn_delete)
 
+	var btn_sun = Button.new()
+	btn_sun.text = " Sun "
+	btn_sun.pressed.connect(_on_sun_config_pressed)
+	top_hbox.add_child(btn_sun)
+
 	ui_panel = PanelContainer.new()
 	canvas.add_child(ui_panel)
 	
@@ -131,6 +155,75 @@ func _setup_ui():
 	model_list = VBoxContainer.new()
 	model_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.add_child(model_list)
+
+	_create_sun_config_dialog()
+
+func _create_sun_config_dialog():
+	sun_config_dialog = Window.new()
+	sun_config_dialog.title = "Sun Settings"
+	sun_config_dialog.initial_position = Window.WINDOW_INITIAL_POSITION_CENTER_SCREEN_WITH_MOUSE_FOCUS
+	sun_config_dialog.size = Vector2i(300, 250)
+	sun_config_dialog.visible = false
+	# MODIFIED: Add the dialog to the correct parent (the CanvasLayer).
+	canvas.add_child(sun_config_dialog)
+
+	var margin = MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 10)
+	margin.add_theme_constant_override("margin_right", 10)
+	margin.add_theme_constant_override("margin_top", 10)
+	margin.add_theme_constant_override("margin_bottom", 10)
+	sun_config_dialog.add_child(margin)
+
+	var vbox = VBoxContainer.new()
+	margin.add_child(vbox)
+
+	var pos_label = Label.new()
+	pos_label.text = "Sun Position (X, Y, Z):"
+	vbox.add_child(pos_label)
+	
+	var pos_hbox = HBoxContainer.new()
+	vbox.add_child(pos_hbox)
+	sun_pos_x_edit = LineEdit.new()
+	sun_pos_x_edit.placeholder_text = "X"
+	pos_hbox.add_child(sun_pos_x_edit)
+	sun_pos_y_edit = LineEdit.new()
+	sun_pos_y_edit.placeholder_text = "Y"
+	pos_hbox.add_child(sun_pos_y_edit)
+	sun_pos_z_edit = LineEdit.new()
+	sun_pos_z_edit.placeholder_text = "Z"
+	pos_hbox.add_child(sun_pos_z_edit)
+
+	var target_label = Label.new()
+	target_label.text = "Look At Target (X, Y, Z):"
+	vbox.add_child(target_label)
+
+	var target_hbox = HBoxContainer.new()
+	vbox.add_child(target_hbox)
+	sun_target_x_edit = LineEdit.new()
+	sun_target_x_edit.placeholder_text = "X"
+	target_hbox.add_child(sun_target_x_edit)
+	sun_target_y_edit = LineEdit.new()
+	sun_target_y_edit.placeholder_text = "Y"
+	target_hbox.add_child(sun_target_y_edit)
+	sun_target_z_edit = LineEdit.new()
+	sun_target_z_edit.placeholder_text = "Z"
+	target_hbox.add_child(sun_target_z_edit)
+	
+	sun_pos_x_edit.text = str(sun_light.position.x)
+	sun_pos_y_edit.text = str(sun_light.position.y)
+	sun_pos_z_edit.text = str(sun_light.position.z)
+	sun_target_x_edit.text = "0"
+	sun_target_y_edit.text = "0"
+	sun_target_z_edit.text = "0"
+
+	var spacer = Control.new()
+	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	vbox.add_child(spacer)
+
+	var update_btn = Button.new()
+	update_btn.text = "Update Sun"
+	update_btn.pressed.connect(_on_update_sun_pressed)
+	vbox.add_child(update_btn)
 
 func _load_models():
 	var model_paths = []
@@ -316,9 +409,31 @@ func _delete_model_at_cursor():
 		print("No model to delete at ", grid_pos)
 
 # ==========================================
+# SUN CONFIGURATION & UI CALLBACKS
+# ==========================================
+
+func _on_sun_config_pressed():
+	sun_config_dialog.popup_centered()
+
+func _on_update_sun_pressed():
+	var pos_x = sun_pos_x_edit.text.to_float()
+	var pos_y = sun_pos_y_edit.text.to_float()
+	var pos_z = sun_pos_z_edit.text.to_float()
+	var target_x = sun_target_x_edit.text.to_float()
+	var target_y = sun_target_y_edit.text.to_float()
+	var target_z = sun_target_z_edit.text.to_float()
+
+	var new_pos = Vector3(pos_x, pos_y, pos_z)
+	var new_target = Vector3(target_x, target_y, target_z)
+
+	sun_light.position = new_pos
+	sun_light.look_at(new_target)
+
+	sun_config_dialog.hide()
+
+# ==========================================
 # INPUT & CAMERA CONTROLS
 # ==========================================
-# MODIFIED: Added logic for "painting" with the left mouse button.
 func _unhandled_input(event):
 	var mouse_pos = get_viewport().get_mouse_position()
 
@@ -339,7 +454,6 @@ func _unhandled_input(event):
 	if event is InputEventMouseMotion:
 		_update_cursor(mouse_pos)
 
-		# NEW: If is_painting is true, place a model every time the mouse moves.
 		if is_painting:
 			if selected_model_path != "" and not Input.is_key_pressed(KEY_SHIFT):
 				_place_model()
@@ -369,7 +483,7 @@ func _unhandled_input(event):
 		cam_zoom = clamp(cam_zoom, 2.0, 60.0)
 		
 	elif event is InputEventMouseButton:
-		if ui_panel.get_global_rect().has_point(mouse_pos):
+		if ui_panel.get_global_rect().has_point(mouse_pos) or (sun_config_dialog.visible and sun_config_dialog.get_global_rect().has_point(mouse_pos)):
 			return
 
 		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
@@ -378,15 +492,12 @@ func _unhandled_input(event):
 			cam_zoom += 1.5
 		cam_zoom = clamp(cam_zoom, 2.0, 60.0)
 
-		# MODIFIED: Handle the start and end of a "painting" action.
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			if event.pressed:
-				# If a model is selected and we are not panning (shift key), start painting.
 				if selected_model_path != "" and not event.shift_pressed:
 					is_painting = true
-					_place_model() # Place the first model immediately on click.
+					_place_model() 
 			else:
-				# When the left mouse button is released, stop painting.
 				is_painting = false
 
 func _update_cursor(mouse_pos: Vector2):
@@ -404,11 +515,16 @@ func _update_cursor(mouse_pos: Vector2):
 # ==========================================
 # PLACEMENT & SAVE/LOAD
 # ==========================================
+func _configure_shadows_for_node(node: Node):
+	if node is MeshInstance3D:
+		node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	for child in node.get_children():
+		_configure_shadows_for_node(child)
+
 func _place_model():
 	var grid_pos = Vector2(cursor.position.x, cursor.position.z)
 	
 	if grid_data.has(grid_pos) and is_instance_valid(grid_data[grid_pos]):
-		# OPTIMIZATION: If the same model is already here, don't do anything.
 		if grid_data[grid_pos].get_meta("model_path") == selected_model_path and \
 		abs(grid_data[grid_pos].rotation_degrees.y - placement_rotation_y) < 0.1:
 			return
@@ -421,6 +537,7 @@ func _place_model():
 		instance.scale = Vector3.ONE * model_scale
 		instance.rotation_degrees.y = placement_rotation_y
 		instance.set_meta("model_path", selected_model_path)
+		_configure_shadows_for_node(instance)
 		placed_models_container.add_child(instance)
 		grid_data[grid_pos] = instance
 
@@ -458,6 +575,7 @@ func _load_scene():
 			instance.scale = Vector3.ONE * model_scale
 			instance.rotation_degrees.y = item.get("roty", 0.0)
 			instance.set_meta("model_path", item["path"])
+			_configure_shadows_for_node(instance)
 			placed_models_container.add_child(instance)
 			grid_data[Vector2(item["x"], item["z"])] = instance
 	print("Loaded successfully!")
