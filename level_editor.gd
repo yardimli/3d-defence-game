@@ -62,19 +62,18 @@ func _load_config():
 	var config = ConfigFile.new()
 	if config.load("res://config.cfg") == OK:
 		models_folder = config.get_value("Settings", "models_folder", "res://models")
-		tile_x = config.get_value("Settings", "tile_size_x", 2.0)
-		tile_z = config.get_value("Settings", "tile_size_z", 2.0)
-		model_scale = config.get_value("Settings", "model_scale", 1.0)
+		tile_x = float(config.get_value("Settings", "tile_size_x", 2.0))
+		tile_z = float(config.get_value("Settings", "tile_size_z", 2.0))
+		model_scale = float(config.get_value("Settings", "model_scale", 1.0))
 		
-		# NEW: Load camera settings from the config file.
-		cam_zoom = config.get_value("Camera", "zoom", 10.0)
-		cam_rot_x = config.get_value("Camera", "rotation_x", -45.0)
-		cam_rot_y = config.get_value("Camera", "rotation_y", 45.0)
+		cam_zoom = float(config.get_value("Camera", "zoom", 10.0))
+		print(cam_zoom)
+		cam_rot_x = float(config.get_value("Camera", "rotation_x", -45.0))
+		cam_rot_y = float(config.get_value("Camera", "rotation_y", 45.0))
 		
-		# MODIFIED: Load sun settings from the config file on startup.
-		sun_light.light_energy = config.get_value("Sun", "energy", 1.0)
-		var sun_rot_x = config.get_value("Sun", "rotation_x", -50.0)
-		var sun_rot_y = config.get_value("Sun", "rotation_y", -30.0)
+		sun_light.light_energy = float(config.get_value("Sun", "energy", 1.0))
+		var sun_rot_x = float(config.get_value("Sun", "rotation_x", -50.0))
+		var sun_rot_y = float(config.get_value("Sun", "rotation_y", -30.0))
 		sun_light.rotation_degrees = Vector3(sun_rot_x, sun_rot_y, 0)
 
 
@@ -214,7 +213,9 @@ func _unhandled_input(event):
 			return
 
 	if event is InputEventMouseMotion:
-		_update_cursor(mouse_pos)
+		# MODIFIED: The cursor now only follows the mouse if a model is selected.
+		if selected_model_path != "":
+			_update_cursor(mouse_pos)
 
 		if is_painting:
 			if selected_model_path != "" and not Input.is_key_pressed(KEY_SHIFT):
@@ -261,6 +262,9 @@ func _unhandled_input(event):
 				if selected_model_path != "" and not event.shift_pressed:
 					is_painting = true
 					_place_model() 
+				# NEW: If no model is selected, move the cursor to the clicked position.
+				else:
+					_update_cursor(mouse_pos)
 			else:
 				is_painting = false
 
