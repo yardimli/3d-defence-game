@@ -3,6 +3,7 @@
 [ext_resource type="Script" uid="uid://up3k6qnm8lfj" path="res://save_load_manager.gd" id="1_qrstu"]
 
 [node name="SaveLoadManager" type="Window" unique_id=528601749]
+oversampling_override = 1.0
 title = "Save / Load Scene"
 initial_position = 2
 size = Vector2i(400, 500)

@@ -4,6 +4,7 @@
 [ext_resource type="PackedScene" uid="uid://dmqudqdhbk7uj" path="res://asset_selector.tscn" id="2_4farl"]
 [ext_resource type="PackedScene" uid="uid://b5w5g2yvj1w5c" path="res://sun_settings.tscn" id="3_u007t"]
 [ext_resource type="PackedScene" uid="uid://dla24bj4lci1g" path="res://save_load_manager.tscn" id="4_v0uwa"]
+[ext_resource type="PackedScene" uid="uid://b1x2y3z4a5b6c" path="res://settings_dialog.tscn" id="5_abcde"]
 
 [node name="LevelEditor" type="Node3D" unique_id=1779687681]
 script = ExtResource("1_miuv6")
@@ -81,6 +82,13 @@ size_flags_horizontal = 3
 theme_override_font_sizes/font_size = 20
 text = " Sun "
 
+[node name="ButtonSettings" type="Button" parent="UI/TopToolbar/MarginContainer/HBoxContainer" unique_id=404404404]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 20
+text = " Settings "
+
 [node name="AssetSelector" parent="UI" unique_id=1938719706 instance=ExtResource("2_4farl")]
 unique_name_in_owner = true
 
@@ -88,4 +96,7 @@ unique_name_in_owner = true
 unique_name_in_owner = true
 
 [node name="SaveLoadManager" parent="UI" unique_id=947630828 instance=ExtResource("4_v0uwa")]
+unique_name_in_owner = true
+
+[node name="SettingsDialog" parent="UI" unique_id=505505505 instance=ExtResource("5_abcde")]
 unique_name_in_owner = true

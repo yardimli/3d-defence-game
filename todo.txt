@@ -1,9 +1,14 @@
+TODO:
+
 make the game a sandbox game
 
-allow to place multiple objects on same tile, if there is a mesh there already the new one should be placed above it 
-add config for each asset subfolder. it should look for a config.cfg inside each subfolder, if not found use default settings
-settings file should also contain cam position, lookat values and a zoom factor default to 1
-in config file allow user to set model scale for individual meshes as well
+
+add properties button to open/close a panel on the left side of the screen, allow user to see/edit the selected assets position, and size and y position. for position show both grid position and also real x and z, if user edits x and z then dont use grid position for that asset 
+create a new gd and tscn file for the properties panel
+
+allow user to change z-index of a tile to push it down or up add buttons for up/down in the property panel for changing z-order, only enable them if the tile has more than one asset on it. the up/down should recalcute the y positions of the tiles
+add hotkey and button to change selection when multiple assets are on the same tile to the toolbar
+
 
 
 add building/vehicle with turret designer
@@ -14,3 +19,12 @@ add bullet types that turrets will fire, bullets should have properties
 allow user to place buildings with turrets and vehicles with turrets to the main scene
 
 add bullet flying and crash explosion
+
+
+DONE:
+
+allow to place multiple objects on same tile, if there is a mesh there already the new one should be placed above it 
+add config for each asset subfolder. it should look for a config.cfg inside each subfolder, if not found use default settings
+settings file should also contain cam position, lookat values and a zoom factor default to 1
+in config file allow user to set model scale for individual meshes as well
+allow user to drag around already added assets and rotate them, dont allow stacking unless a new settings dialog checkbox is checked
