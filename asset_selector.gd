@@ -22,6 +22,10 @@ var folder_config: ConfigFile = null
 func _ready():
 	# NEW: Load the root config file for fallback values.
 	root_config.load("res://config.cfg")
+	
+	# NEW: Programmatically set the font size for the dropdown to ensure it applies.
+	folder_dropdown.add_theme_font_size_override("font_size", 24)
+	
 	# Connect the dropdown's item_selected signal to the folder change handler.
 	folder_dropdown.item_selected.connect(_on_folder_selected)
 	# Initial population of the asset list.
@@ -161,6 +165,8 @@ func _create_model_preview_button(path: String):
 	var scene_name = path.get_file().get_basename()
 	var label = Label.new()
 	label.text = " " + scene_name
+	# MODIFIED: Increase the font size for the model name label.
+	label.add_theme_font_size_override("font_size", 18)
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
