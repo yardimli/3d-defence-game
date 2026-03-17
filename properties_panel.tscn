@@ -1,0 +1,133 @@
+[gd_scene format=3 uid="uid://dsm1wfmpdfide"]
+
+[ext_resource type="Script" uid="uid://cbaaqstkmnl1f" path="res://properties_panel.gd" id="1_abc12"]
+
+[node name="PropertiesPanel" type="PanelContainer" unique_id=415073706]
+anchors_preset = 9
+anchor_bottom = 1.0
+offset_right = 250.0
+grow_vertical = 2
+script = ExtResource("1_abc12")
+
+[node name="MarginContainer" type="MarginContainer" parent="." unique_id=332341787]
+layout_mode = 2
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 10
+
+[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer" unique_id=1700248505]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Label" type="Label" parent="MarginContainer/VBoxContainer" unique_id=611370764]
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "Properties"
+horizontal_alignment = 1
+
+[node name="HSeparator" type="HSeparator" parent="MarginContainer/VBoxContainer" unique_id=281292654]
+layout_mode = 2
+
+[node name="Label2" type="Label" parent="MarginContainer/VBoxContainer" unique_id=379198299]
+layout_mode = 2
+text = "Position"
+
+[node name="HBoxContainer" type="HBoxContainer" parent="MarginContainer/VBoxContainer" unique_id=1360037961]
+layout_mode = 2
+
+[node name="Label3" type="Label" parent="MarginContainer/VBoxContainer/HBoxContainer" unique_id=735419149]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 0.5
+text = "Grid:"
+
+[node name="GridPosLabel" type="Label" parent="MarginContainer/VBoxContainer/HBoxContainer" unique_id=1790082343]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "(0, 0)"
+
+[node name="PosGrid" type="GridContainer" parent="MarginContainer/VBoxContainer" unique_id=1037691935]
+layout_mode = 2
+columns = 2
+
+[node name="LabelX" type="Label" parent="MarginContainer/VBoxContainer/PosGrid" unique_id=837332864]
+layout_mode = 2
+text = "Pos X:"
+
+[node name="PosXSpinBox" type="SpinBox" parent="MarginContainer/VBoxContainer/PosGrid" unique_id=1252326617]
+layout_mode = 2
+size_flags_horizontal = 3
+min_value = -1000.0
+max_value = 1000.0
+step = 0.01
+allow_greater = true
+allow_lesser = true
+
+[node name="LabelY" type="Label" parent="MarginContainer/VBoxContainer/PosGrid" unique_id=817430725]
+layout_mode = 2
+text = "Pos Y:"
+
+[node name="PosYSpinBox" type="SpinBox" parent="MarginContainer/VBoxContainer/PosGrid" unique_id=4038877]
+layout_mode = 2
+size_flags_horizontal = 3
+min_value = -1000.0
+max_value = 1000.0
+step = 0.01
+allow_greater = true
+allow_lesser = true
+
+[node name="LabelZ" type="Label" parent="MarginContainer/VBoxContainer/PosGrid" unique_id=390340640]
+layout_mode = 2
+text = "Pos Z:"
+
+[node name="PosZSpinBox" type="SpinBox" parent="MarginContainer/VBoxContainer/PosGrid" unique_id=1080584110]
+layout_mode = 2
+size_flags_horizontal = 3
+min_value = -1000.0
+max_value = 1000.0
+step = 0.01
+allow_greater = true
+allow_lesser = true
+
+[node name="HSeparator2" type="HSeparator" parent="MarginContainer/VBoxContainer" unique_id=98877274]
+layout_mode = 2
+
+[node name="Label4" type="Label" parent="MarginContainer/VBoxContainer" unique_id=1818009589]
+layout_mode = 2
+text = "Scale"
+
+[node name="HBoxContainer2" type="HBoxContainer" parent="MarginContainer/VBoxContainer" unique_id=684596949]
+layout_mode = 2
+
+[node name="Label5" type="Label" parent="MarginContainer/VBoxContainer/HBoxContainer2" unique_id=543853113]
+layout_mode = 2
+text = "Uniform:"
+
+[node name="ScaleSpinBox" type="SpinBox" parent="MarginContainer/VBoxContainer/HBoxContainer2" unique_id=1000232712]
+layout_mode = 2
+size_flags_horizontal = 3
+min_value = 0.01
+step = 0.01
+value = 1.0
+
+[node name="HSeparator3" type="HSeparator" parent="MarginContainer/VBoxContainer" unique_id=1263141064]
+layout_mode = 2
+
+[node name="Label6" type="Label" parent="MarginContainer/VBoxContainer" unique_id=1814565225]
+layout_mode = 2
+text = "Stack Order"
+
+[node name="HBoxContainer3" type="HBoxContainer" parent="MarginContainer/VBoxContainer" unique_id=610609402]
+layout_mode = 2
+alignment = 1
+
+[node name="OrderUpButton" type="Button" parent="MarginContainer/VBoxContainer/HBoxContainer3" unique_id=961991129]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Up"
+
+[node name="OrderDownButton" type="Button" parent="MarginContainer/VBoxContainer/HBoxContainer3" unique_id=1062946297]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Down"

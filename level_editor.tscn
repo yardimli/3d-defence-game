@@ -5,6 +5,7 @@
 [ext_resource type="PackedScene" uid="uid://b5w5g2yvj1w5c" path="res://sun_settings.tscn" id="3_u007t"]
 [ext_resource type="PackedScene" uid="uid://dla24bj4lci1g" path="res://save_load_manager.tscn" id="4_v0uwa"]
 [ext_resource type="PackedScene" uid="uid://b1x2y3z4a5b6c" path="res://settings_dialog.tscn" id="5_abcde"]
+[ext_resource type="PackedScene" uid="uid://c1x2y3z4a5b6d" path="res://properties_panel.tscn" id="6_prop"]
 
 [node name="LevelEditor" type="Node3D" unique_id=1779687681]
 script = ExtResource("1_miuv6")
@@ -33,6 +34,7 @@ shadow_enabled = true
 [node name="TopToolbar" type="PanelContainer" parent="UI" unique_id=420691337]
 anchors_preset = 10
 anchor_right = 1.0
+offset_left = 250.0
 offset_right = -230.0
 offset_bottom = 68.0
 grow_horizontal = 2
@@ -47,12 +49,19 @@ theme_override_constants/margin_bottom = 5
 [node name="HBoxContainer" type="HBoxContainer" parent="UI/TopToolbar/MarginContainer" unique_id=1054303969]
 layout_mode = 2
 
+[node name="ButtonProperties" type="Button" parent="UI/TopToolbar/MarginContainer/HBoxContainer" unique_id=101010101]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 20
+text = " Props "
+
 [node name="ButtonSave" type="Button" parent="UI/TopToolbar/MarginContainer/HBoxContainer" unique_id=341605976]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_font_sizes/font_size = 20
-text = " Save / Load "
+text = " Save "
 
 [node name="ButtonLoad" type="Button" parent="UI/TopToolbar/MarginContainer/HBoxContainer" unique_id=1070875295]
 unique_name_in_owner = true
@@ -67,6 +76,13 @@ layout_mode = 2
 size_flags_horizontal = 3
 theme_override_font_sizes/font_size = 20
 text = " Rotate (R) "
+
+[node name="ButtonCycleSelection" type="Button" parent="UI/TopToolbar/MarginContainer/HBoxContainer" unique_id=202020202]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 20
+text = " Cycle (C) "
 
 [node name="ButtonDelete" type="Button" parent="UI/TopToolbar/MarginContainer/HBoxContainer" unique_id=21327566]
 unique_name_in_owner = true
@@ -90,6 +106,9 @@ theme_override_font_sizes/font_size = 20
 text = " Settings "
 
 [node name="AssetSelector" parent="UI" unique_id=1938719706 instance=ExtResource("2_4farl")]
+unique_name_in_owner = true
+
+[node name="PropertiesPanel" parent="UI" unique_id=303030303 instance=ExtResource("6_prop")]
 unique_name_in_owner = true
 
 [node name="SunSettings" parent="UI" unique_id=1504610152 instance=ExtResource("3_u007t")]
