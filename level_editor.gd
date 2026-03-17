@@ -23,13 +23,15 @@ var camera: Camera3D
 var ui_panel: PanelContainer
 var sun_light: DirectionalLight3D
 var sun_config_dialog: Window
-var canvas: CanvasLayer # NEW: Make the CanvasLayer a member variable.
+var canvas: CanvasLayer
 var sun_pos_x_edit: LineEdit
 var sun_pos_y_edit: LineEdit
 var sun_pos_z_edit: LineEdit
 var sun_target_x_edit: LineEdit
 var sun_target_y_edit: LineEdit
 var sun_target_z_edit: LineEdit
+var sun_intensity_slider: HSlider
+var sun_intensity_value_label: Label
 
 
 # --- Materials ---
@@ -104,7 +106,6 @@ func _setup_scene_nodes():
 	add_child(cursor)
 
 func _setup_ui():
-	# MODIFIED: Assign to the member variable instead of a local one.
 	canvas = CanvasLayer.new()
 	add_child(canvas)
 
@@ -162,19 +163,24 @@ func _create_sun_config_dialog():
 	sun_config_dialog = Window.new()
 	sun_config_dialog.title = "Sun Settings"
 	sun_config_dialog.initial_position = Window.WINDOW_INITIAL_POSITION_CENTER_SCREEN_WITH_MOUSE_FOCUS
-	sun_config_dialog.size = Vector2i(300, 250)
+	sun_config_dialog.size = Vector2i(450, 350)
 	sun_config_dialog.visible = false
-	# MODIFIED: Add the dialog to the correct parent (the CanvasLayer).
+	sun_config_dialog.close_requested.connect(sun_config_dialog.hide)
 	canvas.add_child(sun_config_dialog)
 
+	var ui_theme = Theme.new()
+	ui_theme.default_font_size = 24
+	sun_config_dialog.theme = ui_theme
+
 	var margin = MarginContainer.new()
-	margin.add_theme_constant_override("margin_left", 10)
-	margin.add_theme_constant_override("margin_right", 10)
-	margin.add_theme_constant_override("margin_top", 10)
-	margin.add_theme_constant_override("margin_bottom", 10)
+	margin.add_theme_constant_override("margin_left", 15)
+	margin.add_theme_constant_override("margin_right", 15)
+	margin.add_theme_constant_override("margin_top", 15)
+	margin.add_theme_constant_override("margin_bottom", 15)
 	sun_config_dialog.add_child(margin)
 
 	var vbox = VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 10)
 	margin.add_child(vbox)
 
 	var pos_label = Label.new()
@@ -208,6 +214,27 @@ func _create_sun_config_dialog():
 	sun_target_z_edit = LineEdit.new()
 	sun_target_z_edit.placeholder_text = "Z"
 	target_hbox.add_child(sun_target_z_edit)
+	
+	var intensity_label = Label.new()
+	intensity_label.text = "Sun Intensity:"
+	vbox.add_child(intensity_label)
+
+	var intensity_hbox = HBoxContainer.new()
+	vbox.add_child(intensity_hbox)
+
+	sun_intensity_slider = HSlider.new()
+	sun_intensity_slider.min_value = 0.0
+	sun_intensity_slider.max_value = 2.0
+	sun_intensity_slider.step = 0.01
+	sun_intensity_slider.value = sun_light.light_energy
+	sun_intensity_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sun_intensity_slider.value_changed.connect(_on_sun_intensity_slider_changed)
+	intensity_hbox.add_child(sun_intensity_slider)
+
+	sun_intensity_value_label = Label.new()
+	sun_intensity_value_label.text = str(sun_light.light_energy)
+	sun_intensity_value_label.custom_minimum_size = Vector2(60, 0)
+	intensity_hbox.add_child(sun_intensity_value_label)
 	
 	sun_pos_x_edit.text = str(sun_light.position.x)
 	sun_pos_y_edit.text = str(sun_light.position.y)
@@ -415,6 +442,9 @@ func _delete_model_at_cursor():
 func _on_sun_config_pressed():
 	sun_config_dialog.popup_centered()
 
+func _on_sun_intensity_slider_changed(value: float):
+	sun_intensity_value_label.text = str(snapped(value, 0.01))
+
 func _on_update_sun_pressed():
 	var pos_x = sun_pos_x_edit.text.to_float()
 	var pos_y = sun_pos_y_edit.text.to_float()
@@ -422,12 +452,14 @@ func _on_update_sun_pressed():
 	var target_x = sun_target_x_edit.text.to_float()
 	var target_y = sun_target_y_edit.text.to_float()
 	var target_z = sun_target_z_edit.text.to_float()
+	var intensity = sun_intensity_slider.value
 
 	var new_pos = Vector3(pos_x, pos_y, pos_z)
 	var new_target = Vector3(target_x, target_y, target_z)
 
 	sun_light.position = new_pos
 	sun_light.look_at(new_target)
+	sun_light.light_energy = intensity
 
 	sun_config_dialog.hide()
 
@@ -542,32 +574,79 @@ func _place_model():
 		grid_data[grid_pos] = instance
 
 func _save_scene():
-	var save_array =[]
+	# MODIFIED: The save data is now a dictionary containing both level and sun data.
+	var level_data_array = []
 	for grid_pos in grid_data:
 		var node = grid_data[grid_pos]
 		if is_instance_valid(node):
-			save_array.append({
+			level_data_array.append({
 				"path": node.get_meta("model_path"),
 				"x": grid_pos.x,
 				"z": grid_pos.y,
 				"roty": node.rotation_degrees.y
 			})
+	
+	# NEW: Create a dictionary for the sun settings.
+	var sun_settings = {
+		"pos_x": sun_light.position.x,
+		"pos_y": sun_light.position.y,
+		"pos_z": sun_light.position.z,
+		"rot_x": sun_light.rotation_degrees.x,
+		"rot_y": sun_light.rotation_degrees.y,
+		"rot_z": sun_light.rotation_degrees.z,
+		"energy": sun_light.light_energy
+	}
+	
+	# NEW: Combine level and sun data into a single dictionary.
+	var full_save_data = {
+		"level_data": level_data_array,
+		"sun_settings": sun_settings
+	}
+	
 	var file = FileAccess.open("user://level_save.json", FileAccess.WRITE)
-	file.store_string(JSON.stringify(save_array))
+	file.store_string(JSON.stringify(full_save_data, "\t")) # MODIFIED: Save the combined data. Using "\t" for pretty printing.
 	file.close()
 	print("Saved to user://level_save.json")
 
 func _load_scene():
-	if not FileAccess.file_exists("user://level_save.json"): return
-	var file = FileAccess.open("user://level_save.json", FileAccess.READ)
+	var save_path = "user://level_save.json"
+	if not FileAccess.file_exists(save_path): return
+
+	var file = FileAccess.open(save_path, FileAccess.READ)
 	var data = JSON.parse_string(file.get_as_text())
 	file.close()
 
+	# Clear the current scene before loading
 	for child in placed_models_container.get_children():
 		child.queue_free()
 	grid_data.clear()
 
-	for item in data:
+	# MODIFIED: Check if the loaded data is a dictionary (new format) or an array (old format).
+	var level_data_to_load = []
+	if typeof(data) == TYPE_DICTIONARY and data.has("level_data"):
+		# This is the new save format.
+		level_data_to_load = data["level_data"]
+		if data.has("sun_settings"):
+			var sun_data = data["sun_settings"]
+			sun_light.position = Vector3(sun_data.get("pos_x", 0), sun_data.get("pos_y", 0), sun_data.get("pos_z", 0))
+			sun_light.rotation_degrees = Vector3(sun_data.get("rot_x", -50), sun_data.get("rot_y", -30), sun_data.get("rot_z", 0))
+			sun_light.light_energy = sun_data.get("energy", 1.0)
+			
+			# NEW: Update the UI controls in the sun dialog to reflect the loaded values.
+			sun_pos_x_edit.text = str(sun_light.position.x)
+			sun_pos_y_edit.text = str(sun_light.position.y)
+			sun_pos_z_edit.text = str(sun_light.position.z)
+			sun_intensity_slider.value = sun_light.light_energy
+			
+	elif typeof(data) == TYPE_ARRAY:
+		# This is for backward compatibility with the old save format.
+		level_data_to_load = data
+	else:
+		printerr("Failed to load scene: Invalid save file format.")
+		return
+
+	# Load all the placed models
+	for item in level_data_to_load:
 		var scene = load(item["path"])
 		if scene:
 			var instance = scene.instantiate()
@@ -578,4 +657,5 @@ func _load_scene():
 			_configure_shadows_for_node(instance)
 			placed_models_container.add_child(instance)
 			grid_data[Vector2(item["x"], item["z"])] = instance
+			
 	print("Loaded successfully!")
