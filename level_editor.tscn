@@ -1,0 +1,70 @@
+[gd_scene format=3 uid="uid://dv1st75gouogq"]
+
+[ext_resource type="Script" uid="uid://bsngo3tn00djt" path="res://level_editor.gd" id="1_miuv6"]
+[ext_resource type="PackedScene" uid="uid://dmqudqdhbk7uj" path="res://asset_selector.tscn" id="2_4farl"]
+[ext_resource type="PackedScene" uid="uid://b5w5g2yvj1w5c" path="res://sun_settings.tscn" id="3_u007t"]
+[ext_resource type="PackedScene" uid="uid://dla24bj4lci1g" path="res://save_load_manager.tscn" id="4_v0uwa"]
+
+[node name="LevelEditor" type="Node3D" unique_id=1779687681]
+script = ExtResource("1_miuv6")
+
+[node name="PlacedModelsContainer" type="Node3D" parent="." unique_id=964087148]
+unique_name_in_owner = true
+
+[node name="CameraPivot" type="Node3D" parent="." unique_id=1537654916]
+unique_name_in_owner = true
+
+[node name="Camera3D" type="Camera3D" parent="CameraPivot" unique_id=1774509767]
+unique_name_in_owner = true
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 10)
+
+[node name="Cursor" type="MeshInstance3D" parent="." unique_id=897824195]
+unique_name_in_owner = true
+cast_shadow = 0
+
+[node name="SunLight" type="DirectionalLight3D" parent="." unique_id=1612296246]
+unique_name_in_owner = true
+transform = Transform3D(0.866025, -0.25, 0.433013, 0, 0.866025, 0.5, -0.5, -0.433013, 0.75, 0, 0, 0)
+shadow_enabled = true
+
+[node name="UI" type="CanvasLayer" parent="." unique_id=1798965312]
+
+[node name="TopBar" type="HBoxContainer" parent="UI" unique_id=1732453403]
+offset_left = 15.0
+offset_top = 15.0
+offset_right = 703.0
+offset_bottom = 97.0
+
+[node name="ButtonSave" type="Button" parent="UI/TopBar" unique_id=341605976]
+unique_name_in_owner = true
+layout_mode = 2
+text = " Save / Load "
+
+[node name="ButtonLoad" type="Button" parent="UI/TopBar" unique_id=1070875295]
+unique_name_in_owner = true
+layout_mode = 2
+text = " Load "
+
+[node name="ButtonRotate" type="Button" parent="UI/TopBar" unique_id=1995372146]
+unique_name_in_owner = true
+layout_mode = 2
+text = " Rotate (R) "
+
+[node name="ButtonDelete" type="Button" parent="UI/TopBar" unique_id=21327566]
+unique_name_in_owner = true
+layout_mode = 2
+text = " Delete (D) "
+
+[node name="ButtonSun" type="Button" parent="UI/TopBar" unique_id=37885636]
+unique_name_in_owner = true
+layout_mode = 2
+text = " Sun "
+
+[node name="AssetSelector" parent="UI" unique_id=1938719706 instance=ExtResource("2_4farl")]
+unique_name_in_owner = true
+
+[node name="SunSettings" parent="UI" unique_id=1504610152 instance=ExtResource("3_u007t")]
+unique_name_in_owner = true
+
+[node name="SaveLoadManager" parent="UI" unique_id=947630828 instance=ExtResource("4_v0uwa")]
+unique_name_in_owner = true

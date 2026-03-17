@@ -1,0 +1,107 @@
+[gd_scene format=3 uid="uid://b5w5g2yvj1w5c"]
+
+[ext_resource type="Script" uid="uid://b6pdmjovyrkb5" path="res://sun_settings.gd" id="1_abcde"]
+
+[node name="SunSettings" type="Window" unique_id=1196174467]
+oversampling_override = 1.0
+title = "Sun Settings"
+initial_position = 2
+size = Vector2i(450, 350)
+visible = false
+script = ExtResource("1_abcde")
+
+[node name="MarginContainer" type="MarginContainer" parent="." unique_id=1718588176]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 15
+theme_override_constants/margin_top = 15
+theme_override_constants/margin_right = 15
+theme_override_constants/margin_bottom = 15
+
+[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer" unique_id=878600675]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Label" type="Label" parent="MarginContainer/VBoxContainer" unique_id=1913541323]
+layout_mode = 2
+text = "Sun Position (X, Y, Z):"
+
+[node name="PosHBox" type="HBoxContainer" parent="MarginContainer/VBoxContainer" unique_id=1750909988]
+layout_mode = 2
+
+[node name="SunPosXEdit" type="LineEdit" parent="MarginContainer/VBoxContainer/PosHBox" unique_id=2012497014]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "X"
+
+[node name="SunPosYEdit" type="LineEdit" parent="MarginContainer/VBoxContainer/PosHBox" unique_id=1975144275]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "Y"
+
+[node name="SunPosZEdit" type="LineEdit" parent="MarginContainer/VBoxContainer/PosHBox" unique_id=216687312]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "Z"
+
+[node name="Label2" type="Label" parent="MarginContainer/VBoxContainer" unique_id=785172627]
+layout_mode = 2
+text = "Sun Rotation (X, Y, Z):"
+
+[node name="RotHBox" type="HBoxContainer" parent="MarginContainer/VBoxContainer" unique_id=11989036]
+layout_mode = 2
+
+[node name="SunRotXEdit" type="LineEdit" parent="MarginContainer/VBoxContainer/RotHBox" unique_id=1536335734]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "X"
+
+[node name="SunRotYEdit" type="LineEdit" parent="MarginContainer/VBoxContainer/RotHBox" unique_id=2252054]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "Y"
+
+[node name="SunRotZEdit" type="LineEdit" parent="MarginContainer/VBoxContainer/RotHBox" unique_id=1729581123]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "Z"
+
+[node name="Label3" type="Label" parent="MarginContainer/VBoxContainer" unique_id=1088284378]
+layout_mode = 2
+text = "Sun Intensity:"
+
+[node name="IntensityHBox" type="HBoxContainer" parent="MarginContainer/VBoxContainer" unique_id=1565485797]
+layout_mode = 2
+
+[node name="SunIntensitySlider" type="HSlider" parent="MarginContainer/VBoxContainer/IntensityHBox" unique_id=1956503302]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+max_value = 2.0
+step = 0.01
+value = 0.1
+
+[node name="SunIntensityValueLabel" type="Label" parent="MarginContainer/VBoxContainer/IntensityHBox" unique_id=1076189002]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(60, 0)
+layout_mode = 2
+text = "0.1
+"
+
+[node name="Control" type="Control" parent="MarginContainer/VBoxContainer" unique_id=869939276]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="UpdateButton" type="Button" parent="MarginContainer/VBoxContainer" unique_id=1030395679]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Update Sun"

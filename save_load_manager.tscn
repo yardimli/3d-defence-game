@@ -1,0 +1,61 @@
+[gd_scene format=3 uid="uid://dla24bj4lci1g"]
+
+[ext_resource type="Script" uid="uid://up3k6qnm8lfj" path="res://save_load_manager.gd" id="1_qrstu"]
+
+[node name="SaveLoadManager" type="Window" unique_id=528601749]
+title = "Save / Load Scene"
+initial_position = 2
+size = Vector2i(400, 500)
+visible = false
+script = ExtResource("1_qrstu")
+
+[node name="MarginContainer" type="MarginContainer" parent="." unique_id=1385057423]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 10
+
+[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer" unique_id=197979735]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="MarginContainer/VBoxContainer" unique_id=160818314]
+layout_mode = 2
+text = "Scene Name:"
+
+[node name="SceneNameEdit" type="LineEdit" parent="MarginContainer/VBoxContainer" unique_id=977070620]
+unique_name_in_owner = true
+layout_mode = 2
+placeholder_text = "Enter a name..."
+
+[node name="HBoxContainer" type="HBoxContainer" parent="MarginContainer/VBoxContainer" unique_id=1054303969]
+layout_mode = 2
+alignment = 1
+
+[node name="SaveButton" type="Button" parent="MarginContainer/VBoxContainer/HBoxContainer" unique_id=1821363961]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Save"
+
+[node name="LoadButton" type="Button" parent="MarginContainer/VBoxContainer/HBoxContainer" unique_id=1441056515]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Load"
+
+[node name="HSeparator" type="HSeparator" parent="MarginContainer/VBoxContainer" unique_id=1990625597]
+layout_mode = 2
+
+[node name="Label2" type="Label" parent="MarginContainer/VBoxContainer" unique_id=808179774]
+layout_mode = 2
+text = "Existing Scenes:"
+
+[node name="SceneList" type="ItemList" parent="MarginContainer/VBoxContainer" unique_id=1856312415]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3

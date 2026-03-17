@@ -1,0 +1,16 @@
+make the game a sandbox game
+
+allow to place multiple objects on same tile, if there is a mesh there already the new one should be placed above it 
+add config for each asset subfolder. it should look for a config.cfg inside each subfolder, if not found use default settings
+settings file should also contain cam position, lookat values and a zoom factor default to 1
+in config file allow user to set model scale for individual meshes as well
+
+
+add building/vehicle with turret designer
+buildings should have health/energy  properties that can be edited
+vehicles should have health/energy/movement properties that can be edited
+turrets should have properties
+add bullet types that turrets will fire, bullets should have properties
+allow user to place buildings with turrets and vehicles with turrets to the main scene
+
+add bullet flying and crash explosion

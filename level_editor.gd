@@ -4,35 +4,33 @@ extends Node3D
 var models_folder := "res://models"
 var tile_x := 2.0
 var tile_z := 2.0
+# MODIFIED: This is now just a fallback, as scale can be set per-model.
 var model_scale := 1.0
 
 # --- State ---
 var selected_model_path := ""
+# NEW: This scale is updated when a new model is selected.
+var selected_model_scale := 1.0
+# MODIFIED: Grid data now stores an array of models for each tile to allow stacking.
 var grid_data := {}
-var preview_buttons :=[]
 var ghost_instance: Node3D = null
 var placement_rotation_y := 0.0
 var is_painting := false
 
 # --- Nodes ---
-var placed_models_container: Node3D
-var cursor: MeshInstance3D
-var model_list: VBoxContainer
-var camera_pivot: Node3D
-var camera: Camera3D
-var ui_panel: PanelContainer
-var sun_light: DirectionalLight3D
-var sun_config_dialog: Window
-var canvas: CanvasLayer
-var sun_pos_x_edit: LineEdit
-var sun_pos_y_edit: LineEdit
-var sun_pos_z_edit: LineEdit
-var sun_target_x_edit: LineEdit
-var sun_target_y_edit: LineEdit
-var sun_target_z_edit: LineEdit
-var sun_intensity_slider: HSlider
-var sun_intensity_value_label: Label
-
+@onready var placed_models_container: Node3D = %PlacedModelsContainer
+@onready var cursor: MeshInstance3D = %Cursor
+@onready var camera_pivot: Node3D = %CameraPivot
+@onready var camera: Camera3D = %Camera3D
+@onready var sun_light: DirectionalLight3D = %SunLight
+@onready var asset_selector: PanelContainer = %AssetSelector
+@onready var sun_settings: Window = %SunSettings
+@onready var save_load_manager: Window = %SaveLoadManager
+@onready var btn_save: Button = %ButtonSave
+@onready var btn_load: Button = %ButtonLoad
+@onready var btn_rotate: Button = %ButtonRotate
+@onready var btn_delete: Button = %ButtonDelete
+@onready var btn_sun: Button = %ButtonSun
 
 # --- Materials ---
 var ghost_material: StandardMaterial3D
@@ -45,10 +43,11 @@ var cam_rot_y := 45.0
 func _ready():
 	_load_config()
 	_setup_materials()
-	_setup_scene_nodes()
-	_setup_lighting()
-	_setup_ui()
-	_load_models()
+	_connect_ui_signals()
+	
+	var mesh = BoxMesh.new()
+	mesh.size = Vector3(tile_x, 0.1, tile_z)
+	cursor.mesh = mesh
 
 func _process(delta):
 	# Smoothly interpolate camera rotation and zoom
@@ -66,16 +65,21 @@ func _load_config():
 		tile_x = config.get_value("Settings", "tile_size_x", 2.0)
 		tile_z = config.get_value("Settings", "tile_size_z", 2.0)
 		model_scale = config.get_value("Settings", "model_scale", 1.0)
-	
+		
+		# NEW: Load camera settings from the config file.
+		cam_zoom = config.get_value("Camera", "zoom", 10.0)
+		cam_rot_x = config.get_value("Camera", "rotation_x", -45.0)
+		cam_rot_y = config.get_value("Camera", "rotation_y", 45.0)
+		
+		# MODIFIED: Load sun settings from the config file on startup.
+		sun_light.light_energy = config.get_value("Sun", "energy", 1.0)
+		var sun_rot_x = config.get_value("Sun", "rotation_x", -50.0)
+		var sun_rot_y = config.get_value("Sun", "rotation_y", -30.0)
+		sun_light.rotation_degrees = Vector3(sun_rot_x, sun_rot_y, 0)
+
+
 	if not DirAccess.dir_exists_absolute(models_folder):
 		DirAccess.make_dir_absolute(models_folder)
-
-func _setup_lighting():
-	sun_light = DirectionalLight3D.new()
-	sun_light.name = "SunLight"
-	sun_light.shadow_enabled = true
-	sun_light.rotation_degrees = Vector3(-50, -30, 0)
-	add_child(sun_light)
 
 func _setup_materials():
 	# Create the transparent "hologram" material for the cursor ghost
@@ -86,309 +90,38 @@ func _setup_materials():
 	ghost_material.emission = Color(0.2, 0.4, 0.8)
 	ghost_material.emission_energy_multiplier = 0.5
 
-func _setup_scene_nodes():
-	placed_models_container = Node3D.new()
-	add_child(placed_models_container)
-
-	camera_pivot = Node3D.new()
-	add_child(camera_pivot)
-	camera = Camera3D.new()
-	camera_pivot.add_child(camera)
-	
-	cursor = MeshInstance3D.new()
-	var mesh = BoxMesh.new()
-	mesh.size = Vector3(tile_x, 0.1, tile_z)
-	cursor.mesh = mesh
-	var mat = StandardMaterial3D.new()
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mat.albedo_color = Color(0, 1, 0, 0.3)
-	cursor.mesh.surface_set_material(0, mat)
-	add_child(cursor)
-
-func _setup_ui():
-	canvas = CanvasLayer.new()
-	add_child(canvas)
-
-	var top_hbox = HBoxContainer.new()
-	top_hbox.position = Vector2(15, 15)
-	canvas.add_child(top_hbox)
-
-	var btn_save = Button.new()
-	btn_save.text = " Save "
-	btn_save.pressed.connect(_save_scene)
-	top_hbox.add_child(btn_save)
-
-	var btn_load = Button.new()
-	btn_load.text = " Load "
-	btn_load.pressed.connect(_load_scene)
-	top_hbox.add_child(btn_load)
-	
-	var btn_rotate = Button.new()
-	btn_rotate.text = " Rotate (R) "
+func _connect_ui_signals():
+	# Main toolbar buttons
+	btn_save.pressed.connect(save_load_manager.open)
+	btn_load.pressed.connect(save_load_manager.open)
 	btn_rotate.pressed.connect(_rotate_placement)
-	top_hbox.add_child(btn_rotate)
-
-	var btn_delete = Button.new()
-	btn_delete.text = " Delete (D) "
 	btn_delete.pressed.connect(_delete_model_at_cursor)
-	top_hbox.add_child(btn_delete)
-
-	var btn_sun = Button.new()
-	btn_sun.text = " Sun "
 	btn_sun.pressed.connect(_on_sun_config_pressed)
-	top_hbox.add_child(btn_sun)
-
-	ui_panel = PanelContainer.new()
-	canvas.add_child(ui_panel)
 	
-	ui_panel.anchor_left = 1.0
-	ui_panel.anchor_right = 1.0
-	ui_panel.anchor_top = 0.0
-	ui_panel.anchor_bottom = 1.0
-	ui_panel.offset_left = -230.0
-	ui_panel.offset_right = 0.0
-	ui_panel.offset_top = 0.0
-	ui_panel.offset_bottom = 0.0
-
-	var scroll = ScrollContainer.new()
-	ui_panel.add_child(scroll)
-
-	model_list = VBoxContainer.new()
-	model_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.add_child(model_list)
-
-	_create_sun_config_dialog()
-
-func _create_sun_config_dialog():
-	sun_config_dialog = Window.new()
-	sun_config_dialog.title = "Sun Settings"
-	sun_config_dialog.initial_position = Window.WINDOW_INITIAL_POSITION_CENTER_SCREEN_WITH_MOUSE_FOCUS
-	sun_config_dialog.size = Vector2i(450, 350)
-	sun_config_dialog.visible = false
-	sun_config_dialog.close_requested.connect(sun_config_dialog.hide)
-	canvas.add_child(sun_config_dialog)
-
-	var ui_theme = Theme.new()
-	ui_theme.default_font_size = 24
-	sun_config_dialog.theme = ui_theme
-
-	var margin = MarginContainer.new()
-	margin.add_theme_constant_override("margin_left", 15)
-	margin.add_theme_constant_override("margin_right", 15)
-	margin.add_theme_constant_override("margin_top", 15)
-	margin.add_theme_constant_override("margin_bottom", 15)
-	sun_config_dialog.add_child(margin)
-
-	var vbox = VBoxContainer.new()
-	vbox.add_theme_constant_override("separation", 10)
-	margin.add_child(vbox)
-
-	var pos_label = Label.new()
-	pos_label.text = "Sun Position (X, Y, Z):"
-	vbox.add_child(pos_label)
+	# Asset Selector component signals
+	asset_selector.model_selected.connect(_on_model_selected)
+	asset_selector.selection_cleared.connect(_deselect_model)
 	
-	var pos_hbox = HBoxContainer.new()
-	vbox.add_child(pos_hbox)
-	sun_pos_x_edit = LineEdit.new()
-	sun_pos_x_edit.placeholder_text = "X"
-	pos_hbox.add_child(sun_pos_x_edit)
-	sun_pos_y_edit = LineEdit.new()
-	sun_pos_y_edit.placeholder_text = "Y"
-	pos_hbox.add_child(sun_pos_y_edit)
-	sun_pos_z_edit = LineEdit.new()
-	sun_pos_z_edit.placeholder_text = "Z"
-	pos_hbox.add_child(sun_pos_z_edit)
-
-	var target_label = Label.new()
-	target_label.text = "Look At Target (X, Y, Z):"
-	vbox.add_child(target_label)
-
-	var target_hbox = HBoxContainer.new()
-	vbox.add_child(target_hbox)
-	sun_target_x_edit = LineEdit.new()
-	sun_target_x_edit.placeholder_text = "X"
-	target_hbox.add_child(sun_target_x_edit)
-	sun_target_y_edit = LineEdit.new()
-	sun_target_y_edit.placeholder_text = "Y"
-	target_hbox.add_child(sun_target_y_edit)
-	sun_target_z_edit = LineEdit.new()
-	sun_target_z_edit.placeholder_text = "Z"
-	target_hbox.add_child(sun_target_z_edit)
+	# Sun Settings component signal
+	sun_settings.sun_updated.connect(_on_sun_settings_updated)
 	
-	var intensity_label = Label.new()
-	intensity_label.text = "Sun Intensity:"
-	vbox.add_child(intensity_label)
+	# Save/Load Manager component signals
+	save_load_manager.save_requested.connect(_save_scene)
+	save_load_manager.load_requested.connect(_load_scene)
 
-	var intensity_hbox = HBoxContainer.new()
-	vbox.add_child(intensity_hbox)
+# MODIFIED: This function now receives a dictionary with path and scale.
+func _on_model_selected(data: Dictionary):
+	selected_model_path = data.get("path", "")
+	selected_model_scale = data.get("scale", 1.0)
+	_create_ghost(selected_model_path)
 
-	sun_intensity_slider = HSlider.new()
-	sun_intensity_slider.min_value = 0.0
-	sun_intensity_slider.max_value = 2.0
-	sun_intensity_slider.step = 0.01
-	sun_intensity_slider.value = sun_light.light_energy
-	sun_intensity_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	sun_intensity_slider.value_changed.connect(_on_sun_intensity_slider_changed)
-	intensity_hbox.add_child(sun_intensity_slider)
-
-	sun_intensity_value_label = Label.new()
-	sun_intensity_value_label.text = str(sun_light.light_energy)
-	sun_intensity_value_label.custom_minimum_size = Vector2(60, 0)
-	intensity_hbox.add_child(sun_intensity_value_label)
-	
-	sun_pos_x_edit.text = str(sun_light.position.x)
-	sun_pos_y_edit.text = str(sun_light.position.y)
-	sun_pos_z_edit.text = str(sun_light.position.z)
-	sun_target_x_edit.text = "0"
-	sun_target_y_edit.text = "0"
-	sun_target_z_edit.text = "0"
-
-	var spacer = Control.new()
-	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	vbox.add_child(spacer)
-
-	var update_btn = Button.new()
-	update_btn.text = "Update Sun"
-	update_btn.pressed.connect(_on_update_sun_pressed)
-	vbox.add_child(update_btn)
-
-func _load_models():
-	var model_paths = []
-	var dir = DirAccess.open(models_folder)
-	if dir:
-		dir.list_dir_begin()
-		var file = dir.get_next()
-		while file != "":
-			if not dir.current_is_dir() and file.ends_with(".glb"):
-				model_paths.append(models_folder + "/" + file)
-			file = dir.get_next()
-	
-	model_paths.sort()
-	
-	if model_paths.is_empty():
-		print("WARNING: No .glb files found in ", models_folder)
-	else:
-		for path in model_paths:
-			_create_model_preview_button(path)
-
-func _get_glb_scene_name(path: String) -> String:
-	var file = FileAccess.open(path, FileAccess.READ)
-	if not file:
-		return ""
-	file.seek(12)
-	var json_chunk_length = file.get_32()
-	var json_chunk_type = file.get_32()
-	if json_chunk_type != 0x4E4F534A:
-		printerr("Error: First chunk is not JSON for file: ", path)
-		return ""
-	var json_data_bytes = file.get_buffer(json_chunk_length)
-	var json_string = json_data_bytes.get_string_from_utf8()
-	var data = JSON.parse_string(json_string)
-	if data and typeof(data) == TYPE_DICTIONARY and data.has("scenes"):
-		if typeof(data.scenes) == TYPE_ARRAY and not data.scenes.is_empty():
-			var first_scene = data.scenes[0]
-			if typeof(first_scene) == TYPE_DICTIONARY and first_scene.has("name"):
-				return first_scene.name
-	return ""
-
-func _create_model_preview_button(path: String):
-	var btn = Button.new()
-	btn.custom_minimum_size = Vector2(220, 220)
-	btn.pressed.connect(_on_model_selected.bind(path, btn))
-	
-	var scene_name = _get_glb_scene_name(path)
-	if not scene_name.is_empty():
-		var label = Label.new()
-		label.text = " " + scene_name
-		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-		label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
-		label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		btn.add_child(label)
-	
-	var svc = SubViewportContainer.new()
-	svc.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	svc.set_anchors_preset(Control.PRESET_FULL_RECT)
-	svc.stretch = true
-	btn.add_child(svc)
-	
-	var vp = SubViewport.new()
-	vp.own_world_3d = true
-	vp.transparent_bg = true
-	vp.size = Vector2(220, 220)
-	svc.add_child(vp)
-	
-	var cam = Camera3D.new()
-	vp.add_child(cam)
-	cam.position = Vector3(0, 1.0, 2.5)
-	cam.look_at(Vector3(0,0,0))
-		
-	var env = Environment.new()
-	env.background_mode = Environment.BG_COLOR
-	env.background_color = Color(0.2, 0.2, 0.2, 1.0)
-	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(1, 1, 1)
-	cam.environment = env
-	
-	var light = DirectionalLight3D.new()
-	light.rotation_degrees = Vector3(-45, 45, 0)
-	vp.add_child(light)
-
-	var scene = load(path)
-	if scene:
-		var instance = scene.instantiate()
-		vp.add_child(instance)
-		get_tree().process_frame.connect(_fit_model_to_preview.bind(instance, cam), CONNECT_ONE_SHOT)
-
-	model_list.add_child(btn)
-	preview_buttons.append({"btn": btn, "path": path})
-
-func _fit_model_to_preview(instance: Node3D, cam: Camera3D):
-	var meshes =[]
-	_get_mesh_instances(instance, meshes)
-	if meshes.is_empty(): return
-	
-	var bounds = AABB()
-	var first = true
-	for mi in meshes:
-		var mi_aabb = mi.get_aabb()
-		var xform = instance.global_transform.affine_inverse() * mi.global_transform
-		var transformed_aabb = xform * mi_aabb
-		if first:
-			bounds = transformed_aabb
-			first = false
-		else:
-			bounds = bounds.merge(transformed_aabb)
-			
-	var max_size = max(bounds.size.x, max(bounds.size.y, bounds.size.z))
-	if max_size > 0.001:
-		var fit_scale = 2.0 / max_size
-		instance.scale = Vector3.ONE * fit_scale
-		instance.position = -bounds.get_center() * fit_scale
-		cam.look_at(instance.position)
-
-func _get_mesh_instances(node: Node, result: Array):
-	if node is MeshInstance3D:
-		result.append(node)
-	for child in node.get_children():
-		_get_mesh_instances(child, result)
-
-func _on_model_selected(path: String, selected_btn: Button):
-	selected_model_path = path
-	for item in preview_buttons:
-		item.btn.modulate = Color(1, 1, 1)
-	selected_btn.modulate = Color(0.4, 1.0, 0.4)
-	
-	_create_ghost(path)
-
+# MODIFIED: This function is now a signal handler for the AssetSelector.
 func _deselect_model():
 	selected_model_path = ""
-
-	for item in preview_buttons:
-		item.btn.modulate = Color(1, 1, 1)
-
 	if is_instance_valid(ghost_instance):
 		ghost_instance.queue_free()
 		ghost_instance = null
+	asset_selector.clear_selection()
 	print("Selection cleared.")
 
 func _create_ghost(path: String):
@@ -399,7 +132,8 @@ func _create_ghost(path: String):
 	if scene:
 		ghost_instance = scene.instantiate()
 		cursor.add_child(ghost_instance)
-		ghost_instance.scale = Vector3.ONE * model_scale
+		# MODIFIED: Use the specific scale for the selected model.
+		ghost_instance.scale = Vector3.ONE * selected_model_scale
 		ghost_instance.rotation_degrees.y = placement_rotation_y
 		_apply_ghost_material(ghost_instance)
 
@@ -420,17 +154,24 @@ func _rotate_placement():
 		ghost_instance.rotation_degrees.y = placement_rotation_y
 	print("Placement rotation set to: ", placement_rotation_y)
 
+# MODIFIED: Deletes the TOPMOST model at the cursor's grid position.
 func _delete_model_at_cursor():
 	var grid_pos = Vector2(cursor.position.x, cursor.position.z)
 	
 	if grid_data.has(grid_pos):
-		var model_to_delete = grid_data[grid_pos]
+		var models_on_tile: Array = grid_data[grid_pos]
 		
-		if is_instance_valid(model_to_delete):
-			model_to_delete.queue_free()
-			grid_data.erase(grid_pos)
-			print("Deleted model at ", grid_pos)
+		if not models_on_tile.is_empty():
+			var model_to_delete = models_on_tile.pop_back() # Get the last model
+			if is_instance_valid(model_to_delete):
+				model_to_delete.queue_free()
+			print("Deleted top model at ", grid_pos)
+			
+			# If the tile is now empty, remove its key from the dictionary.
+			if models_on_tile.is_empty():
+				grid_data.erase(grid_pos)
 		else:
+			# Clean up empty array just in case.
 			grid_data.erase(grid_pos)
 	else:
 		print("No model to delete at ", grid_pos)
@@ -440,28 +181,17 @@ func _delete_model_at_cursor():
 # ==========================================
 
 func _on_sun_config_pressed():
-	sun_config_dialog.popup_centered()
+	var current_settings = {
+		"position": sun_light.position,
+		"rotation_degrees": sun_light.rotation_degrees,
+		"energy": sun_light.light_energy
+	}
+	sun_settings.open_with_settings(current_settings)
 
-func _on_sun_intensity_slider_changed(value: float):
-	sun_intensity_value_label.text = str(snapped(value, 0.01))
-
-func _on_update_sun_pressed():
-	var pos_x = sun_pos_x_edit.text.to_float()
-	var pos_y = sun_pos_y_edit.text.to_float()
-	var pos_z = sun_pos_z_edit.text.to_float()
-	var target_x = sun_target_x_edit.text.to_float()
-	var target_y = sun_target_y_edit.text.to_float()
-	var target_z = sun_target_z_edit.text.to_float()
-	var intensity = sun_intensity_slider.value
-
-	var new_pos = Vector3(pos_x, pos_y, pos_z)
-	var new_target = Vector3(target_x, target_y, target_z)
-
-	sun_light.position = new_pos
-	sun_light.look_at(new_target)
-	sun_light.light_energy = intensity
-
-	sun_config_dialog.hide()
+func _on_sun_settings_updated(new_settings: Dictionary):
+	sun_light.position = new_settings.get("position", sun_light.position)
+	sun_light.rotation_degrees = new_settings.get("rotation_degrees", sun_light.rotation_degrees)
+	sun_light.light_energy = new_settings.get("energy", sun_light.light_energy)
 
 # ==========================================
 # INPUT & CAMERA CONTROLS
@@ -491,7 +221,7 @@ func _unhandled_input(event):
 				_place_model()
 
 		if Input.is_mouse_button_pressed(MOUSE_BUTTON_MIDDLE) or (Input.is_key_pressed(KEY_SHIFT) and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)):
-			if ui_panel.get_global_rect().has_point(mouse_pos):
+			if asset_selector.get_global_rect().has_point(mouse_pos):
 				return
 			var right = camera.global_transform.basis.x
 			var forward = camera.global_transform.basis.z
@@ -501,21 +231,23 @@ func _unhandled_input(event):
 			camera_pivot.global_position -= (right * event.relative.x + forward * event.relative.y) * pan_speed
 		
 		elif Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
-			if ui_panel.get_global_rect().has_point(mouse_pos):
+			if asset_selector.get_global_rect().has_point(mouse_pos):
 				return
 			cam_rot_y -= event.relative.x * 0.4
 			cam_rot_x -= event.relative.y * 0.4
 			cam_rot_x = clamp(cam_rot_x, -89.0, -10.0)
 
 	if event is InputEventPanGesture:
-		if ui_panel.get_global_rect().has_point(mouse_pos):
+		if asset_selector.get_global_rect().has_point(mouse_pos):
 			return
 
 		cam_zoom += event.delta.y * 0.5
 		cam_zoom = clamp(cam_zoom, 2.0, 60.0)
 		
 	elif event is InputEventMouseButton:
-		if ui_panel.get_global_rect().has_point(mouse_pos) or (sun_config_dialog.visible and sun_config_dialog.get_global_rect().has_point(mouse_pos)):
+		if asset_selector.get_global_rect().has_point(mouse_pos) or \
+		(sun_settings.visible and sun_settings.get_global_rect().has_point(mouse_pos)) or \
+		(save_load_manager.visible and save_load_manager.get_global_rect().has_point(mouse_pos)):
 			return
 
 		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
@@ -532,6 +264,7 @@ func _unhandled_input(event):
 			else:
 				is_painting = false
 
+# MODIFIED: This function now also calculates the correct height for the ghost preview.
 func _update_cursor(mouse_pos: Vector2):
 	var origin = camera.project_ray_origin(mouse_pos)
 	var dir = camera.project_ray_normal(mouse_pos)
@@ -543,6 +276,25 @@ func _update_cursor(mouse_pos: Vector2):
 	var sn_x = round(intersection.x / tile_x) * tile_x
 	var sn_z = round(intersection.z / tile_z) * tile_z
 	cursor.position = Vector3(sn_x, 0, sn_z)
+	
+	# NEW: Logic to position the ghost instance at the correct height for stacking.
+	if is_instance_valid(ghost_instance):
+		var grid_pos = Vector2(sn_x, sn_z)
+		var y_offset = 0.0
+		
+		# Check if there are any models on the tile under the cursor.
+		if grid_data.has(grid_pos):
+			var models_on_tile: Array = grid_data[grid_pos]
+			if not models_on_tile.is_empty():
+				var top_model = models_on_tile.back()
+				if is_instance_valid(top_model):
+					# Calculate the Y position of the top of the highest model.
+					y_offset = _get_node_top_y(top_model)
+		
+		# Set the ghost's local Y position. Since it's a child of the cursor
+		# (which is at Y=0), this places it at the correct world height.
+		ghost_instance.position.y = y_offset
+
 
 # ==========================================
 # PLACEMENT & SAVE/LOAD
@@ -553,41 +305,83 @@ func _configure_shadows_for_node(node: Node):
 	for child in node.get_children():
 		_configure_shadows_for_node(child)
 
+# NEW: Helper function to get all mesh instances recursively.
+func _get_all_meshes(node: Node, meshes: Array):
+	if node is MeshInstance3D:
+		meshes.append(node)
+	for child in node.get_children():
+		_get_all_meshes(child, meshes)
+
+# NEW: Helper function to calculate the highest Y point of a model's bounding box.
+func _get_node_top_y(node: Node3D) -> float:
+	var meshes = []
+	_get_all_meshes(node, meshes)
+	if meshes.is_empty():
+		return node.global_position.y
+
+	var max_y = -INF
+	for mi in meshes:
+		var aabb = mi.get_aabb()
+		var global_xform = mi.global_transform
+		var transformed_aabb = global_xform * aabb
+		max_y = max(max_y, transformed_aabb.end.y)
+	return max_y
+
+# MODIFIED: Major rewrite to handle stacking objects.
 func _place_model():
 	var grid_pos = Vector2(cursor.position.x, cursor.position.z)
 	
-	if grid_data.has(grid_pos) and is_instance_valid(grid_data[grid_pos]):
-		if grid_data[grid_pos].get_meta("model_path") == selected_model_path and \
-		abs(grid_data[grid_pos].rotation_degrees.y - placement_rotation_y) < 0.1:
-			return
-		grid_data[grid_pos].queue_free()
+	# Ensure there's an array to store models for this tile.
+	if not grid_data.has(grid_pos):
+		grid_data[grid_pos] = []
+	
+	var models_on_tile: Array = grid_data[grid_pos]
+	var y_offset = 0.0
+	
+	# If there are already models on this tile, find the height of the top one.
+	if not models_on_tile.is_empty():
+		var top_model = models_on_tile.back()
+		if is_instance_valid(top_model):
+			y_offset = _get_node_top_y(top_model)
 
 	var scene = load(selected_model_path)
 	if scene:
 		var instance = scene.instantiate()
-		instance.position = cursor.position
-		instance.scale = Vector3.ONE * model_scale
+		# MODIFIED: Set the Y position based on the object below it.
+		instance.position = Vector3(cursor.position.x, y_offset, cursor.position.z)
+		# MODIFIED: Use the scale provided by the asset selector.
+		instance.scale = Vector3.ONE * selected_model_scale
 		instance.rotation_degrees.y = placement_rotation_y
 		instance.set_meta("model_path", selected_model_path)
+		# NEW: Store the specific scale used, for saving/loading.
+		instance.set_meta("model_scale", selected_model_scale)
+		
 		_configure_shadows_for_node(instance)
 		placed_models_container.add_child(instance)
-		grid_data[grid_pos] = instance
+		
+		# Add the new instance to the array for this tile.
+		models_on_tile.append(instance)
 
-func _save_scene():
-	# MODIFIED: The save data is now a dictionary containing both level and sun data.
+# MODIFIED: Now saves the full position (including Y) and scale for each object.
+func _save_scene(scene_name: String):
 	var level_data_array = []
+	# MODIFIED: Iterate through the grid data structure.
 	for grid_pos in grid_data:
-		var node = grid_data[grid_pos]
-		if is_instance_valid(node):
-			level_data_array.append({
-				"path": node.get_meta("model_path"),
-				"x": grid_pos.x,
-				"z": grid_pos.y,
-				"roty": node.rotation_degrees.y
-			})
+		var models_on_tile: Array = grid_data[grid_pos]
+		for node in models_on_tile:
+			if is_instance_valid(node):
+				level_data_array.append({
+					"path": node.get_meta("model_path"),
+					# MODIFIED: Save the full Vector3 position.
+					"pos_x": node.position.x,
+					"pos_y": node.position.y,
+					"pos_z": node.position.z,
+					"roty": node.rotation_degrees.y,
+					# NEW: Save the scale of the object.
+					"scale": node.get_meta("model_scale", model_scale)
+				})
 	
-	# NEW: Create a dictionary for the sun settings.
-	var sun_settings = {
+	var sun_settings_data = {
 		"pos_x": sun_light.position.x,
 		"pos_y": sun_light.position.y,
 		"pos_z": sun_light.position.z,
@@ -597,65 +391,66 @@ func _save_scene():
 		"energy": sun_light.light_energy
 	}
 	
-	# NEW: Combine level and sun data into a single dictionary.
 	var full_save_data = {
 		"level_data": level_data_array,
-		"sun_settings": sun_settings
+		"sun_settings": sun_settings_data
 	}
 	
-	var file = FileAccess.open("user://level_save.json", FileAccess.WRITE)
-	file.store_string(JSON.stringify(full_save_data, "\t")) # MODIFIED: Save the combined data. Using "\t" for pretty printing.
+	var save_path = save_load_manager.SAVE_DIR.path_join(scene_name + ".json")
+	var file = FileAccess.open(save_path, FileAccess.WRITE)
+	file.store_string(JSON.stringify(full_save_data, "\t"))
 	file.close()
-	print("Saved to user://level_save.json")
+	print("Saved to ", save_path)
 
-func _load_scene():
-	var save_path = "user://level_save.json"
-	if not FileAccess.file_exists(save_path): return
+# MODIFIED: Now loads full position and scale, and rebuilds the grid_data array structure.
+func _load_scene(scene_name: String):
+	var save_path = save_load_manager.SAVE_DIR.path_join(scene_name + ".json")
+	if not FileAccess.file_exists(save_path): 
+		printerr("Save file not found: ", save_path)
+		return
 
 	var file = FileAccess.open(save_path, FileAccess.READ)
 	var data = JSON.parse_string(file.get_as_text())
 	file.close()
 
-	# Clear the current scene before loading
 	for child in placed_models_container.get_children():
 		child.queue_free()
 	grid_data.clear()
 
-	# MODIFIED: Check if the loaded data is a dictionary (new format) or an array (old format).
-	var level_data_to_load = []
 	if typeof(data) == TYPE_DICTIONARY and data.has("level_data"):
-		# This is the new save format.
-		level_data_to_load = data["level_data"]
+		var level_data_to_load = data["level_data"]
 		if data.has("sun_settings"):
 			var sun_data = data["sun_settings"]
 			sun_light.position = Vector3(sun_data.get("pos_x", 0), sun_data.get("pos_y", 0), sun_data.get("pos_z", 0))
 			sun_light.rotation_degrees = Vector3(sun_data.get("rot_x", -50), sun_data.get("rot_y", -30), sun_data.get("rot_z", 0))
-			sun_light.light_energy = sun_data.get("energy", 1.0)
+			sun_light.light_energy = sun_data.get("energy", 0.1)
 			
-			# NEW: Update the UI controls in the sun dialog to reflect the loaded values.
-			sun_pos_x_edit.text = str(sun_light.position.x)
-			sun_pos_y_edit.text = str(sun_light.position.y)
-			sun_pos_z_edit.text = str(sun_light.position.z)
-			sun_intensity_slider.value = sun_light.light_energy
-			
-	elif typeof(data) == TYPE_ARRAY:
-		# This is for backward compatibility with the old save format.
-		level_data_to_load = data
+		for item in level_data_to_load:
+			var scene = load(item["path"])
+			if scene:
+				var instance = scene.instantiate()
+				# MODIFIED: Load the full Vector3 position.
+				instance.position = Vector3(item["pos_x"], item["pos_y"], item["pos_z"])
+				# MODIFIED: Load the saved scale, falling back to the default.
+				var loaded_scale = item.get("scale", model_scale)
+				instance.scale = Vector3.ONE * loaded_scale
+				instance.rotation_degrees.y = item.get("roty", 0.0)
+				instance.set_meta("model_path", item["path"])
+				instance.set_meta("model_scale", loaded_scale)
+				_configure_shadows_for_node(instance)
+				placed_models_container.add_child(instance)
+				
+				# MODIFIED: Rebuild the grid_data structure.
+				var grid_pos = Vector2(item["pos_x"], item["pos_z"])
+				if not grid_data.has(grid_pos):
+					grid_data[grid_pos] = []
+				grid_data[grid_pos].append(instance)
 	else:
 		printerr("Failed to load scene: Invalid save file format.")
 		return
-
-	# Load all the placed models
-	for item in level_data_to_load:
-		var scene = load(item["path"])
-		if scene:
-			var instance = scene.instantiate()
-			instance.position = Vector3(item["x"], 0, item["z"])
-			instance.scale = Vector3.ONE * model_scale
-			instance.rotation_degrees.y = item.get("roty", 0.0)
-			instance.set_meta("model_path", item["path"])
-			_configure_shadows_for_node(instance)
-			placed_models_container.add_child(instance)
-			grid_data[Vector2(item["x"], item["z"])] = instance
+	
+	# NEW: Sort the arrays in grid_data by Y position to ensure correct stacking order.
+	for grid_pos in grid_data:
+		grid_data[grid_pos].sort_custom(func(a, b): return a.position.y < b.position.y)
 			
 	print("Loaded successfully!")
