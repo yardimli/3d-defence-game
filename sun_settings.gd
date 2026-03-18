@@ -1,4 +1,3 @@
-# sun_settings.gd
 extends Window
 
 # Emitted when the user clicks the "Update Sun" button.
@@ -17,6 +16,9 @@ signal sun_updated(settings: Dictionary)
 @onready var update_btn: Button = %UpdateButton
 
 func _ready():
+	# NEW: Make the window modal, which blocks input to the main scene when visible.
+	exclusive = true
+	
 	# Connect signals from UI elements to their handlers.
 	update_btn.pressed.connect(_on_update_sun_pressed)
 	sun_intensity_slider.value_changed.connect(_on_sun_intensity_slider_changed)

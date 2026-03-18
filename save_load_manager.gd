@@ -1,4 +1,3 @@
-# save_load_manager.gd
 extends Window
 
 # Emitted when the user requests to save the scene with a given name.
@@ -15,6 +14,9 @@ const SAVE_DIR = "user://levels/"
 @onready var scene_list: ItemList = %SceneList
 
 func _ready():
+	# NEW: Make the window modal, which blocks input to the main scene when visible.
+	exclusive = true
+	
 	# Ensure the save directory exists.
 	DirAccess.make_dir_recursive_absolute(SAVE_DIR)
 	

@@ -21,6 +21,9 @@ signal preview_settings_changed(settings: Dictionary)
 
 
 func _ready():
+	# NEW: Make the window modal, which blocks input to the main scene when visible.
+	exclusive = true
+	
 	# Connect UI signals to their handlers.
 	stacking_checkbox.toggled.connect(_on_stacking_checkbox_toggled)
 	close_button.pressed.connect(hide)
