@@ -396,6 +396,52 @@ func _on_grid_snap_toggled(should_snap: bool):
 # ==========================================
 # INPUT & CAMERA CONTROLS
 # ==========================================
+
+# NEW: Centralized function to handle deletion via right-click.
+# Returns true if an object was deleted, false otherwise.
+func _handle_right_click_delete(mouse_pos: Vector2) -> bool:
+	_update_cursor(mouse_pos)
+	var grid_pos = Vector2(cursor.position.x, cursor.position.z)
+
+	# Priority 1: If road builder is on, try to delete a road piece.
+	if is_road_builder_enabled:
+		var road_node = road_builder.get_road_node_at(grid_pos)
+		if is_instance_valid(road_node):
+			var road_grid_pos = _get_grid_pos_for_instance(road_node)
+			# Delete it from grid_data
+			var models_on_tile: Array = grid_data[road_grid_pos]
+			models_on_tile.erase(road_node)
+			if models_on_tile.is_empty():
+				grid_data.erase(road_grid_pos)
+			# Free the node
+			road_node.queue_free()
+			# Update neighbors
+			road_builder.on_model_deleted(road_grid_pos)
+			_mark_as_modified()
+			return true
+	# Priority 2: If an asset is selected, try to delete that.
+	elif is_instance_valid(selected_instance):
+		var selected_grid_pos = _get_grid_pos_for_instance(selected_instance)
+		# Only delete if the cursor is on the same tile as the selected instance.
+		if grid_pos == selected_grid_pos:
+			var instance_to_delete = selected_instance
+			_deselect_instance() # This clears selected_instance
+			
+			# Remove from grid_data
+			var models_on_tile: Array = grid_data[selected_grid_pos]
+			models_on_tile.erase(instance_to_delete)
+			if models_on_tile.is_empty():
+				grid_data.erase(selected_grid_pos)
+			
+			instance_to_delete.queue_free()
+			
+			# Recalculate stack if other things remain on the tile
+			_recalculate_stack_y_positions(selected_grid_pos)
+			_mark_as_modified()
+			return true
+	
+	return false
+
 func _unhandled_input(event):
 	var mouse_pos = get_viewport().get_mouse_position()
 	if event is InputEventKey and event.pressed:
@@ -439,6 +485,15 @@ func _unhandled_input(event):
 		(settings_dialog.visible and settings_dialog.get_global_rect().has_point(mouse_pos)) or \
 		(properties_panel.visible and properties_panel.get_global_rect().has_point(mouse_pos)):
 			return
+		
+		# NEW: Handle right-click for specific deletion actions.
+		if event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
+			# If the delete handler succeeds, it means a "delete click" occurred,
+			# so we consume the event to prevent camera rotation from starting.
+			if _handle_right_click_delete(mouse_pos):
+				get_viewport().set_input_as_handled()
+				return
+
 		if event.button_index == MOUSE_BUTTON_WHEEL_UP: cam_zoom -= 1.5
 		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN: cam_zoom += 1.5
 		cam_zoom = clamp(cam_zoom, 2.0, 60.0)
@@ -576,6 +631,8 @@ func _get_grid_pos_for_instance(instance: Node3D) -> Vector2:
 	var z = round(instance.position.z / tile_z) * tile_z
 	return Vector2(x, z)
 
+# MODIFIED: Simplified stacking logic. Roads no longer have a special case and will
+# participate in stacking just like any other asset.
 func _recalculate_stack_y_positions(grid_pos: Vector2):
 	var models_on_tile: Array = grid_data.get(grid_pos, [])
 	if models_on_tile.is_empty(): return
@@ -584,12 +641,8 @@ func _recalculate_stack_y_positions(grid_pos: Vector2):
 	for i in range(models_on_tile.size()):
 		var model: Node3D = models_on_tile[i]
 		if is_instance_valid(model):
-			# MODIFIED: Road pieces should always be at Y=0.
-			if model.get_meta("is_road", false):
-				model.position.y = 0
-			else:
-				model.position.y = y_offset
-				y_offset = _get_node_top_y(model)
+			model.position.y = y_offset
+			y_offset = _get_node_top_y(model)
 
 func _configure_shadows_for_node(node: Node):
 	if node is MeshInstance3D:

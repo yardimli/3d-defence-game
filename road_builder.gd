@@ -1,5 +1,3 @@
-# road_builder.gd
-
 extends Node
 
 # --- Signals ---
@@ -71,6 +69,10 @@ func on_model_deleted(grid_pos: Vector2):
 		if _is_road_at(neighbor_pos):
 			_place_or_update_road_at(neighbor_pos)
 
+# NEW: Public helper to get the road node at a grid position, for use by the level editor.
+func get_road_node_at(grid_pos: Vector2) -> Node3D:
+	return _get_road_node_at(grid_pos)
+
 # --- Internal Logic ---
 
 # MODIFIED: Core function that determines the correct road piece and rotation.
@@ -132,13 +134,24 @@ func _place_or_update_road_at(grid_pos: Vector2):
 		existing_road.rotation_degrees.y = rotation_y
 
 
-# Creates and places a new road piece instance in the scene.
+# MODIFIED: Creates and places a new road piece, calculating its Y position to stack on existing assets.
 func _create_road_piece(grid_pos: Vector2, type: String, rotation_y: float):
 	var model_path = ROAD_MODELS[type]
 	var scene = load(model_path)
 	if scene:
+		# NEW: Calculate y_offset based on the highest existing model on the tile.
+		var y_offset = 0.0
+		if grid_data.has(grid_pos):
+			var models_on_tile: Array = grid_data[grid_pos]
+			if not models_on_tile.is_empty():
+				# The list is sorted by y-pos, so the last one is the top one.
+				var top_model = models_on_tile.back()
+				if is_instance_valid(top_model):
+					y_offset = level_editor._get_node_top_y(top_model)
+
 		var instance = scene.instantiate()
-		instance.position = Vector3(grid_pos.x, 0, grid_pos.y)
+		# MODIFIED: Apply the calculated y_offset.
+		instance.position = Vector3(grid_pos.x, y_offset, grid_pos.y)
 		instance.scale = Vector3.ONE # Road pieces should have a uniform scale of 1.
 		instance.rotation_degrees.y = rotation_y
 		instance.set_meta("model_path", model_path)

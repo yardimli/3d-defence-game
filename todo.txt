@@ -2,9 +2,8 @@ TODO:
 
 make the game a sandbox game
 
-in properties panel add option to switch position from free drag back to tile position and visa verse
-
-add road building function so road tiles adjust based on other road tiles around them to connect properly and rotate
+add delete with right click
+add button to start new blank scene on top, make filename to undefined so save will ask for filename
 
 allow user to add cars to roads, when a car is dragged on top of a road tile it should start moving on the road and when getting to an intersection it will randomly choose a direction and turn towards it and continue driving. when it reaches the end of the road it should u turn back. when another car is its way it should stop and not crash or overlap other car. if the cars cant pass each other they both should make an u-turn.
 add option to add turrets to cars. 
@@ -26,3 +25,7 @@ create a new gd and tscn file for the properties panel
 
 allow user to change z-index of a tile to push it down or up add buttons for up/down in the property panel for changing z-order, only enable them if the tile has more than one asset on it. the up/down should recalcute the y positions of the tiles
 add hotkey and button to change selection when multiple assets are on the same tile to the toolbar
+
+in properties panel add option to switch position from free drag back to tile position and visa verse
+
+add road building function so road tiles adjust based on other road tiles around them to connect properly and rotate
