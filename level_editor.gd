@@ -18,9 +18,10 @@ var is_dragging_instance := false
 var last_painted_grid_pos := Vector2.INF
 var original_drag_grid_pos := Vector2.INF
 var allow_same_asset_stacking := false
-# NEW: State variables for tracking the current file and modification status.
 var current_scene_name: String = ""
 var is_modified := false
+# NEW: State for road builder mode.
+var is_road_builder_enabled := false
 
 # --- Nodes ---
 @onready var placed_models_container: Node3D = %PlacedModelsContainer
@@ -31,7 +32,6 @@ var is_modified := false
 @onready var asset_selector: PanelContainer = %AssetSelector
 @onready var sun_settings: Window = %SunSettings
 @onready var save_load_manager: Window = %SaveLoadManager
-# NEW: Node reference for the "Save As" button.
 @onready var btn_save_as: Button = %ButtonSaveAs
 @onready var btn_save: Button = %ButtonSave
 @onready var btn_load: Button = %ButtonLoad
@@ -40,12 +40,12 @@ var is_modified := false
 @onready var btn_sun: Button = %ButtonSun
 @onready var btn_settings: Button = %ButtonSettings
 @onready var settings_dialog: Window = %SettingsDialog
-# NEW: Node references for the properties panel and its toggle button.
 @onready var btn_properties: Button = %ButtonProperties
 @onready var properties_panel: PanelContainer = %PropertiesPanel
 @onready var btn_cycle_selection: Button = %ButtonCycleSelection
-# NEW: Node reference for the status label in the bottom-left corner.
 @onready var status_label: Label = %StatusLabel
+# NEW: Node reference for the road builder button.
+@onready var btn_road_builder: Button = %ButtonRoadBuilder
 
 # --- Materials ---
 var ghost_material: StandardMaterial3D
@@ -56,9 +56,18 @@ var cam_zoom := 10.0
 var cam_rot_x := -45.0
 var cam_rot_y := 45.0
 
+# --- Custom Modules ---
+# NEW: Instance of the road builder logic.
+var road_builder
+
 func _ready():
 	_load_config()
 	_setup_materials()
+	
+	# NEW: Instantiate and initialize the road builder.
+	road_builder = load("res://road_builder.gd").new()
+	road_builder.initialize(self, placed_models_container, grid_data)
+	
 	_connect_ui_signals()
 	
 	var mesh = BoxMesh.new()                
@@ -70,7 +79,6 @@ func _ready():
 	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA 
 	cursor.material_override = material	
 	
-	# NEW: Initialize the status label on startup.
 	_update_status_label()
 
 func _process(delta):
@@ -115,7 +123,6 @@ func _setup_materials():
 	selection_material.emission_energy_multiplier = 0.8
 
 func _connect_ui_signals():
-	# MODIFIED: The save and save as buttons now connect to new handlers.
 	btn_save.pressed.connect(_on_save_button_pressed)
 	btn_save_as.pressed.connect(_on_save_as_button_pressed)
 	btn_load.pressed.connect(save_load_manager.open)
@@ -124,16 +131,13 @@ func _connect_ui_signals():
 	btn_sun.pressed.connect(_on_sun_config_pressed)
 	btn_settings.pressed.connect(_on_settings_button_pressed)
 	settings_dialog.setting_changed.connect(_on_setting_changed)
-	# NEW: Connect the signal for preview setting changes.
 	settings_dialog.preview_settings_changed.connect(_on_preview_settings_changed)
 	
-	# NEW: Connect properties panel and cycle selection buttons and signals.
 	btn_properties.pressed.connect(properties_panel.toggle_visibility)
 	btn_cycle_selection.pressed.connect(_cycle_selection_on_tile)
 	properties_panel.position_changed.connect(_on_properties_position_changed)
 	properties_panel.scale_changed.connect(_on_properties_scale_changed)
 	properties_panel.order_changed.connect(_on_properties_order_changed)
-	# NEW: Connect the new signal from the properties panel for toggling grid snap.
 	properties_panel.grid_snap_toggled.connect(_on_grid_snap_toggled)
 	
 	asset_selector.model_selected.connect(_on_model_selected)
@@ -141,8 +145,16 @@ func _connect_ui_signals():
 	sun_settings.sun_updated.connect(_on_sun_settings_updated)
 	save_load_manager.save_requested.connect(_save_scene)
 	save_load_manager.load_requested.connect(_load_scene)
+	
+	# NEW: Connect road builder signals.
+	btn_road_builder.pressed.connect(_on_road_builder_toggled)
+	road_builder.scene_modified.connect(_mark_as_modified)
 
 func _on_model_selected(data: Dictionary):
+	# NEW: Disable road builder if an asset is selected.
+	if is_road_builder_enabled:
+		_on_road_builder_toggled()
+		
 	_deselect_instance()
 	selected_model_path = data.get("path", "")
 	selected_model_scale = data.get("scale", 1.0)
@@ -189,7 +201,6 @@ func _clear_material_overlay(node: Node):
 # ==========================================
 # SELECTION & MANIPULATION
 # ==========================================
-# MODIFIED: Now updates the properties panel on selection.
 func _select_instance(instance: Node3D):
 	if not is_instance_valid(instance): return
 	_deselect_instance()
@@ -202,17 +213,14 @@ func _select_instance(instance: Node3D):
 	selected_instance = instance
 	_apply_selection_material(selected_instance)
 	
-	# NEW: Update the properties panel with the selected instance's data.
 	var grid_pos = _get_grid_pos_for_instance(selected_instance)
 	var models_on_tile = grid_data.get(grid_pos, [])
 	properties_panel.update_fields(selected_instance, models_on_tile, grid_pos)
 
-# MODIFIED: Now clears and hides the properties panel.
 func _deselect_instance():
 	if is_instance_valid(selected_instance):
 		_clear_material_overlay(selected_instance)
 		selected_instance = null
-		# NEW: Clear and hide the properties panel when nothing is selected.
 		properties_panel.clear_and_hide()
 
 # ==========================================
@@ -220,20 +228,26 @@ func _deselect_instance():
 # ==========================================
 func _rotate_placement():
 	if is_instance_valid(selected_instance):
-		_mark_as_modified() # NEW: Track modification.
+		# MODIFIED: Don't allow rotating road pieces manually.
+		if selected_instance.get_meta("is_road", false):
+			return
+		_mark_as_modified()
 		selected_instance.rotation_degrees.y = fmod(selected_instance.rotation_degrees.y + 90.0, 360.0)
 		return
 	placement_rotation_y = fmod(placement_rotation_y + 90.0, 360.0)
 	if is_instance_valid(ghost_instance):
 		ghost_instance.rotation_degrees.y = placement_rotation_y
 
-# MODIFIED: Recalculates stack Y positions after deletion.
+# MODIFIED: Now handles road piece deletion to trigger updates.
 func _delete_model_at_cursor():
 	var instance_to_delete = selected_instance
 	var grid_pos_to_update = Vector2.INF
+	# NEW: Flag to check if the deleted model was a road piece.
+	var was_road = false
 
 	if is_instance_valid(instance_to_delete):
 		grid_pos_to_update = _get_grid_pos_for_instance(instance_to_delete)
+		was_road = instance_to_delete.get_meta("is_road", false) # NEW
 		_deselect_instance()
 		if grid_data.has(grid_pos_to_update):
 			var models_on_tile: Array = grid_data[grid_pos_to_update]
@@ -249,20 +263,36 @@ func _delete_model_at_cursor():
 				var model_to_delete = models_on_tile.pop_back()
 				if is_instance_valid(model_to_delete):
 					grid_pos_to_update = grid_pos
+					was_road = model_to_delete.get_meta("is_road", false) # NEW
 					model_to_delete.queue_free()
 				if models_on_tile.is_empty():
 					grid_data.erase(grid_pos)
 			else:
 				grid_data.erase(grid_pos)
 	
-	# NEW: After deleting, recalculate the Y positions of remaining items in the stack.
 	if grid_pos_to_update != Vector2.INF:
-		_recalculate_stack_y_positions(grid_pos_to_update)
-	_mark_as_modified() # NEW: Track modification.
+		# NEW: If a road was deleted, tell the road builder to update neighbors.
+		if was_road:
+			road_builder.on_model_deleted(grid_pos_to_update)
+		else:
+			# Original logic for non-road assets.
+			_recalculate_stack_y_positions(grid_pos_to_update)
+			
+	_mark_as_modified()
 
 # ==========================================
 # UI CALLBACKS
 # ==========================================
+# NEW: Handles toggling the road builder mode.
+func _on_road_builder_toggled():
+	is_road_builder_enabled = not is_road_builder_enabled
+	if is_road_builder_enabled:
+		# When enabling road builder, clear any active model selection.
+		_deselect_model()
+		btn_road_builder.modulate = Color(0.4, 1.0, 0.4) # Highlight color
+	else:
+		btn_road_builder.modulate = Color(1, 1, 1) # Default color
+
 func _on_sun_config_pressed():
 	var current_settings = {
 		"position": sun_light.position,
@@ -276,15 +306,11 @@ func _on_sun_settings_updated(new_settings: Dictionary):
 	sun_light.rotation_degrees = new_settings.get("rotation_degrees", sun_light.rotation_degrees)
 	sun_light.light_energy = new_settings.get("energy", sun_light.light_energy)
 
-# MODIFIED: Now also gets preview settings to populate the dialog.
 func _on_settings_button_pressed():
-	# Get general editor settings.
 	var current_settings = {
 		"allow_same_asset_stacking": allow_same_asset_stacking
 	}
-	# NEW: Get current preview settings from the asset selector.
 	var preview_settings = asset_selector.get_current_preview_settings()
-	# NEW: Merge the two dictionaries so all data is passed to the dialog.
 	current_settings.merge(preview_settings)
 	
 	settings_dialog.open_with_settings(current_settings)
@@ -294,30 +320,23 @@ func _on_setting_changed(setting_name: String, new_value: Variant):
 		allow_same_asset_stacking = new_value
 		print("Allow same asset stacking set to: ", allow_same_asset_stacking)
 
-# NEW: Handles the new signal from the settings dialog to apply preview overrides.
 func _on_preview_settings_changed(settings: Dictionary):
 	asset_selector.apply_preview_overrides(settings)
 
-# NEW: Handles the main "Save" button press.
 func _on_save_button_pressed():
-	# If we don't have a name/path yet, it behaves like "Save As".
 	if current_scene_name.is_empty():
 		save_load_manager.open()
 	else:
-		# Otherwise, save directly to the known file.
 		_save_scene(current_scene_name)
 
-# NEW: Handles the "Save As" button press, which always opens the dialog.
 func _on_save_as_button_pressed():
 	save_load_manager.open()
 
-# NEW: Marks the scene as modified and updates the UI label.
 func _mark_as_modified():
 	if not is_modified:
 		is_modified = true
 		_update_status_label()
 
-# NEW: Updates the text of the status label in the bottom-left corner.
 func _update_status_label():
 	var file_text = current_scene_name if not current_scene_name.is_empty() else "Untitled"
 	var modified_star = " *" if is_modified else ""
@@ -326,30 +345,25 @@ func _update_status_label():
 # ==========================================
 # PROPERTIES PANEL HANDLERS
 # ==========================================
-# NEW: Handles position changes from the properties panel.
 func _on_properties_position_changed(new_pos: Vector3):
 	if not is_instance_valid(selected_instance): return
 	
 	var old_grid_pos = _get_grid_pos_for_instance(selected_instance)
 	selected_instance.position = new_pos
-	# Mark the instance as off-grid so it no longer snaps.
 	selected_instance.set_meta("uses_grid_snap", false)
 	_update_grid_data_for_moved_instance(selected_instance, old_grid_pos)
-	_mark_as_modified() # NEW: Track modification.
+	_mark_as_modified()
 
-# NEW: Handles scale changes from the properties panel.
 func _on_properties_scale_changed(new_scale: float):
 	if not is_instance_valid(selected_instance): return
 	
 	selected_instance.scale = Vector3.ONE * new_scale
 	selected_instance.set_meta("model_scale", new_scale)
 	
-	# After scaling, recalculate the stack it's in.
 	var grid_pos = _get_grid_pos_for_instance(selected_instance)
 	_recalculate_stack_y_positions(grid_pos)
-	_mark_as_modified() # NEW: Track modification.
+	_mark_as_modified()
 
-# NEW: Handles re-ordering requests from the properties panel.
 func _on_properties_order_changed(direction: int):
 	if not is_instance_valid(selected_instance): return
 	
@@ -364,23 +378,20 @@ func _on_properties_order_changed(direction: int):
 			models_on_tile.remove_at(current_index)
 			models_on_tile.insert(new_index, selected_instance)
 			_recalculate_stack_y_positions(grid_pos)
-			# Refresh the panel to update button states.
 			properties_panel.update_fields(selected_instance, models_on_tile, grid_pos)
-	_mark_as_modified() # NEW: Track modification.
+	_mark_as_modified()
 
-# NEW: Handles the toggle for grid snapping from the properties panel.
 func _on_grid_snap_toggled(should_snap: bool):
 	if not is_instance_valid(selected_instance): return
 	
 	selected_instance.set_meta("uses_grid_snap", should_snap)
 	
-	# If we are re-enabling snapping, move the object to the correct grid position.
 	if should_snap:
 		var grid_pos = _get_grid_pos_for_instance(selected_instance)
 		selected_instance.position.x = grid_pos.x
 		selected_instance.position.z = grid_pos.y
 		
-	_mark_as_modified() # NEW: Track modification.
+	_mark_as_modified()
 
 # ==========================================
 # INPUT & CAMERA CONTROLS
@@ -391,14 +402,17 @@ func _unhandled_input(event):
 		if event.keycode == KEY_ESCAPE: _deselect_model()
 		if event.keycode == KEY_R: _rotate_placement()
 		if event.keycode == KEY_D: _delete_model_at_cursor()
-		# NEW: Hotkey to cycle through assets on the same tile.
 		if event.keycode == KEY_C: _cycle_selection_on_tile()
 		if event.is_match(event): get_viewport().set_input_as_handled()
 	if event is InputEventMouseMotion:
-		if selected_model_path != "" or is_dragging_instance:
+		# MODIFIED: Update cursor when road builder is active.
+		if selected_model_path != "" or is_dragging_instance or is_road_builder_enabled:
 			_update_cursor(mouse_pos)
 		if is_painting:
-			if selected_model_path != "" and not Input.is_key_pressed(KEY_SHIFT):
+			# MODIFIED: Check for road builder mode before placing.
+			if is_road_builder_enabled:
+				_place_model()
+			elif selected_model_path != "" and not Input.is_key_pressed(KEY_SHIFT):
 				_place_model()
 		elif is_dragging_instance and is_instance_valid(selected_instance):
 			_drag_selected_instance()
@@ -419,7 +433,6 @@ func _unhandled_input(event):
 		cam_zoom += event.delta.y * 0.5
 		cam_zoom = clamp(cam_zoom, 2.0, 60.0)
 	elif event is InputEventMouseButton:
-		# MODIFIED: Added properties_panel to the UI check.
 		if asset_selector.get_global_rect().has_point(mouse_pos) or \
 		(sun_settings.visible and sun_settings.get_global_rect().has_point(mouse_pos)) or \
 		(save_load_manager.visible and save_load_manager.get_global_rect().has_point(mouse_pos)) or \
@@ -431,7 +444,12 @@ func _unhandled_input(event):
 		cam_zoom = clamp(cam_zoom, 2.0, 60.0)
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			if event.pressed:
-				if selected_model_path != "" and not event.shift_pressed:
+				# MODIFIED: Handle road builder placement.
+				if is_road_builder_enabled:
+					is_painting = true
+					last_painted_grid_pos = Vector2.INF
+					_place_model()
+				elif selected_model_path != "" and not event.shift_pressed:
 					is_painting = true
 					last_painted_grid_pos = Vector2.INF
 					_place_model()
@@ -448,7 +466,7 @@ func _unhandled_input(event):
 			else:
 				if is_dragging_instance and is_instance_valid(selected_instance):
 					_update_grid_data_for_moved_instance(selected_instance, original_drag_grid_pos)
-					_mark_as_modified() # NEW: Track modification.
+					_mark_as_modified()
 				is_painting = false
 				is_dragging_instance = false
 
@@ -490,11 +508,14 @@ func _update_cursor(mouse_pos: Vector2):
 		elif is_dragging_instance and is_instance_valid(selected_instance):
 			selected_instance.position.y = y_offset
 
-# MODIFIED: Now handles objects that are not snapped to the grid.
 func _drag_selected_instance():
 	if not is_instance_valid(selected_instance): return
 	
-	# Raycast to find the ground intersection point.
+	# MODIFIED: Prevent dragging road pieces.
+	if selected_instance.get_meta("is_road", false):
+		is_dragging_instance = false # Cancel the drag
+		return
+		
 	var mouse_pos = get_viewport().get_mouse_position()
 	var origin = camera.project_ray_origin(mouse_pos)
 	var dir = camera.project_ray_normal(mouse_pos)
@@ -502,47 +523,39 @@ func _drag_selected_instance():
 	var t = -origin.y / dir.y
 	var intersection = origin + dir * t
 
-	# If the instance is set to use grid snapping, snap its position.
 	if selected_instance.get_meta("uses_grid_snap", true):
 		var sn_x = round(intersection.x / tile_x) * tile_x
 		var sn_z = round(intersection.z / tile_z) * tile_z
 		selected_instance.position.x = sn_x
 		selected_instance.position.z = sn_z
-	else: # Otherwise, use the precise intersection point.
+	else:
 		selected_instance.position.x = intersection.x
 		selected_instance.position.z = intersection.z
 
-# MODIFIED: Recalculates Y positions on the old stack after a move.
 func _update_grid_data_for_moved_instance(instance: Node3D, old_grid_pos: Vector2):
 	if not is_instance_valid(instance): return
 	
-	# Remove instance from its old tile in grid_data.
 	if grid_data.has(old_grid_pos):
 		var old_tile_models: Array = grid_data[old_grid_pos]
 		old_tile_models.erase(instance)
 		if old_tile_models.is_empty():
 			grid_data.erase(old_grid_pos)
 		else:
-			# NEW: Recalculate the stack that the instance was moved FROM.
 			_recalculate_stack_y_positions(old_grid_pos)
 			
-	# Add instance to its new tile in grid_data.
 	var new_grid_pos = _get_grid_pos_for_instance(instance)
 	if not grid_data.has(new_grid_pos):
 		grid_data[new_grid_pos] = []
 	var new_tile_models: Array = grid_data[new_grid_pos]
 	new_tile_models.append(instance)
-	# Sort the new tile's array by Y position to maintain correct stacking order.
 	new_tile_models.sort_custom(func(a, b): return a.position.y < b.position.y)
 	
-	# NEW: Refresh the properties panel if the moved instance is still selected.
 	if is_instance_valid(selected_instance) and selected_instance == instance:
 		properties_panel.update_fields(instance, new_tile_models, new_grid_pos)
 
 # ==========================================
 # PLACEMENT & SAVE/LOAD
 # ==========================================
-# NEW: Cycles through selecting assets on the tile under the cursor.
 func _cycle_selection_on_tile():
 	var grid_pos = Vector2(cursor.position.x, cursor.position.z)
 	var models_on_tile: Array = grid_data.get(grid_pos, [])
@@ -558,13 +571,11 @@ func _cycle_selection_on_tile():
 	var next_index = (current_selection_index + 1) % models_on_tile.size()
 	_select_instance(models_on_tile[next_index])
 
-# NEW: Helper function to get the representative grid position for an instance.
 func _get_grid_pos_for_instance(instance: Node3D) -> Vector2:
 	var x = round(instance.position.x / tile_x) * tile_x
 	var z = round(instance.position.z / tile_z) * tile_z
 	return Vector2(x, z)
 
-# NEW: Recalculates and updates the Y positions for all assets in a stack.
 func _recalculate_stack_y_positions(grid_pos: Vector2):
 	var models_on_tile: Array = grid_data.get(grid_pos, [])
 	if models_on_tile.is_empty(): return
@@ -573,8 +584,12 @@ func _recalculate_stack_y_positions(grid_pos: Vector2):
 	for i in range(models_on_tile.size()):
 		var model: Node3D = models_on_tile[i]
 		if is_instance_valid(model):
-			model.position.y = y_offset
-			y_offset = _get_node_top_y(model)
+			# MODIFIED: Road pieces should always be at Y=0.
+			if model.get_meta("is_road", false):
+				model.position.y = 0
+			else:
+				model.position.y = y_offset
+				y_offset = _get_node_top_y(model)
 
 func _configure_shadows_for_node(node: Node):
 	if node is MeshInstance3D:
@@ -600,10 +615,19 @@ func _get_node_top_y(node: Node3D) -> float:
 		max_y = max(max_y, transformed_aabb.end.y)
 	return max_y
 
+# MODIFIED: Now handles both regular placement and road building.
 func _place_model():
 	var grid_pos = Vector2(cursor.position.x, cursor.position.z)
 	if is_painting and grid_pos == last_painted_grid_pos:
 		return
+
+	# NEW: Delegate to road builder if it's active.
+	if is_road_builder_enabled:
+		road_builder.place_road(grid_pos)
+		last_painted_grid_pos = grid_pos
+		return
+
+	# --- Original placement logic ---
 	if not grid_data.has(grid_pos):
 		grid_data[grid_pos] = []
 	
@@ -626,15 +650,14 @@ func _place_model():
 		instance.rotation_degrees.y = placement_rotation_y
 		instance.set_meta("model_path", selected_model_path)
 		instance.set_meta("model_scale", selected_model_scale)
-		# NEW: Set meta to indicate the asset should snap to the grid by default.
 		instance.set_meta("uses_grid_snap", true)
 		_configure_shadows_for_node(instance)
 		placed_models_container.add_child(instance)
 		models_on_tile.append(instance)
 		last_painted_grid_pos = grid_pos
-		_mark_as_modified() # NEW: Track modification.
+		_mark_as_modified()
 
-# MODIFIED: Saves the new "uses_grid_snap" meta tag.
+# MODIFIED: Saves the new "is_road" meta tag.
 func _save_scene(scene_name: String):
 	var level_data_array = []
 	for grid_pos in grid_data:
@@ -646,8 +669,9 @@ func _save_scene(scene_name: String):
 					"pos_x": node.position.x, "pos_y": node.position.y, "pos_z": node.position.z,
 					"roty": node.rotation_degrees.y,
 					"scale": node.get_meta("model_scale", model_scale),
-					# NEW: Save the grid snap preference for the instance.
-					"uses_grid_snap": node.get_meta("uses_grid_snap", true)
+					"uses_grid_snap": node.get_meta("uses_grid_snap", true),
+					# NEW: Save the road identifier.
+					"is_road": node.get_meta("is_road", false)
 				})
 	var sun_settings_data = {
 		"pos_x": sun_light.position.x, "pos_y": sun_light.position.y, "pos_z": sun_light.position.z,
@@ -660,12 +684,11 @@ func _save_scene(scene_name: String):
 	file.store_string(JSON.stringify(full_save_data, "\t"))
 	file.close()
 	
-	# NEW: After saving, update the state and UI.
 	current_scene_name = scene_name
 	is_modified = false
 	_update_status_label()
 
-# MODIFIED: Loads the new "uses_grid_snap" meta tag.
+# MODIFIED: Loads the new "is_road" meta tag.
 func _load_scene(scene_name: String):
 	var save_path = save_load_manager.SAVE_DIR.path_join(scene_name + ".json")
 	if not FileAccess.file_exists(save_path): 
@@ -694,8 +717,9 @@ func _load_scene(scene_name: String):
 				instance.rotation_degrees.y = item.get("roty", 0.0)
 				instance.set_meta("model_path", item["path"])
 				instance.set_meta("model_scale", loaded_scale)
-				# NEW: Load the grid snap preference for the instance.
 				instance.set_meta("uses_grid_snap", item.get("uses_grid_snap", true))
+				# NEW: Load the road identifier.
+				instance.set_meta("is_road", item.get("is_road", false))
 				_configure_shadows_for_node(instance)
 				placed_models_container.add_child(instance)
 				var grid_pos = _get_grid_pos_for_instance(instance)
@@ -708,7 +732,6 @@ func _load_scene(scene_name: String):
 	for grid_pos in grid_data:
 		grid_data[grid_pos].sort_custom(func(a, b): return a.position.y < b.position.y)
 		
-	# NEW: After loading, update the state and UI.
 	current_scene_name = scene_name
 	is_modified = false
 	_update_status_label()

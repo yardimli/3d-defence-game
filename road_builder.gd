@@ -38,36 +38,44 @@ func initialize(editor, container, data):
 	placed_models_container = container
 	grid_data = data
 
-# Main function to place a road at a specific grid position.
-# It handles both creating a new road and updating existing ones.
+# MODIFIED: Main function to place a road at a specific grid position.
+# It now correctly handles creating a new road on an empty tile.
 func place_road(grid_pos: Vector2):
 	# Prevent placing a road on top of an existing road piece.
 	if _is_road_at(grid_pos):
 		print("Road already exists at this position.")
 		return
 		
-	# Place the initial piece and then update its neighbors.
+	# 1. Create a default "end" piece to establish a road at this position.
+	_create_road_piece(grid_pos, "end", 0.0)
+	
+	# 2. Immediately update the piece we just placed to match its surroundings.
 	_place_or_update_road_at(grid_pos)
-	for neighbor_offset in [Vector2.UP, Vector2.DOWN, Vector2.LEFT, Vector2.RIGHT]:
-		_place_or_update_road_at(grid_pos + neighbor_offset)
+	
+	# 3. Update all adjacent neighbors so they connect to the new piece.
+	var tile_size = Vector2(level_editor.tile_x, level_editor.tile_z)
+	for neighbor_offset in [Vector2(0, -tile_size.y), Vector2(0, tile_size.y), Vector2(-tile_size.x, 0), Vector2(tile_size.x, 0)]:
+		var neighbor_pos = grid_pos + neighbor_offset
+		if _is_road_at(neighbor_pos):
+			_place_or_update_road_at(neighbor_pos)
 	
 	emit_signal("scene_modified")
+
 
 # Called when a model is deleted, to update adjacent roads.
 func on_model_deleted(grid_pos: Vector2):
 	# Update all neighbors of the deleted piece.
-	for neighbor_offset in [Vector2.UP, Vector2.DOWN, Vector2.LEFT, Vector2.RIGHT]:
-		var neighbor_pos = grid_pos + (neighbor_offset * Vector2(level_editor.tile_x, level_editor.tile_z))
+	var tile_size = Vector2(level_editor.tile_x, level_editor.tile_z)
+	for neighbor_offset in [Vector2(0, -tile_size.y), Vector2(0, tile_size.y), Vector2(-tile_size.x, 0), Vector2(tile_size.x, 0)]:
+		var neighbor_pos = grid_pos + neighbor_offset
 		if _is_road_at(neighbor_pos):
 			_place_or_update_road_at(neighbor_pos)
 
 # --- Internal Logic ---
 
-# Core function that determines the correct road piece and rotation for a given position.
+# MODIFIED: Core function that determines the correct road piece and rotation.
+# Removed the initial check, as this function now assumes a road already exists at the location.
 func _place_or_update_road_at(grid_pos: Vector2):
-	if not _is_road_at(grid_pos):
-		return # Only update existing road pieces.
-
 	var neighbors = _get_road_neighbors(grid_pos)
 	var connection_count = neighbors.size()
 	var road_type = ""
@@ -75,30 +83,32 @@ func _place_or_update_road_at(grid_pos: Vector2):
 
 	# Determine the road type based on the number of connections.
 	match connection_count:
-		0:
-			road_type = "end" # Should not happen if called from an existing road.
-		1:
+		0, 1: # A road with 0 or 1 connection is an endpoint.
 			road_type = "end"
-			if neighbors.has(Vector2.UP): rotation_y = 270.0
-			elif neighbors.has(Vector2.DOWN): rotation_y = 90.0
+			if neighbors.has(Vector2.UP): rotation_y = 90.0
+			elif neighbors.has(Vector2.DOWN): rotation_y = 270.0
 			elif neighbors.has(Vector2.LEFT): rotation_y = 180.0
+			else: rotation_y = 0.0
 		2:
 			# Straight or Corner
-			if (neighbors.has(Vector2.LEFT) and neighbors.has(Vector2.RIGHT)) or \
-			   (neighbors.has(Vector2.UP) and neighbors.has(Vector2.DOWN)):
+			if (neighbors.has(Vector2.LEFT) and neighbors.has(Vector2.RIGHT)):
 				road_type = "straight"
-				if neighbors.has(Vector2.UP): rotation_y = 90.0
+				rotation_y = 0.0
+			elif (neighbors.has(Vector2.UP) and neighbors.has(Vector2.DOWN)):
+				road_type = "straight"
+				rotation_y = 90.0
 			else:
 				road_type = "corner"
-				if neighbors.has(Vector2.UP) and neighbors.has(Vector2.RIGHT): rotation_y = 270.0
-				elif neighbors.has(Vector2.UP) and neighbors.has(Vector2.LEFT): rotation_y = 180.0
-				elif neighbors.has(Vector2.DOWN) and neighbors.has(Vector2.LEFT): rotation_y = 90.0
+				if neighbors.has(Vector2.UP) and neighbors.has(Vector2.RIGHT): rotation_y = 180.0
+				elif neighbors.has(Vector2.UP) and neighbors.has(Vector2.LEFT): rotation_y = 270.0
+				elif neighbors.has(Vector2.DOWN) and neighbors.has(Vector2.LEFT): rotation_y = 0.0
+				else: rotation_y = 90.0
 		3:
 			road_type = "intersection"
-			if not neighbors.has(Vector2.RIGHT): rotation_y = 180.0
-			elif not neighbors.has(Vector2.UP): rotation_y = 90.0
-			elif not neighbors.has(Vector2.LEFT): rotation_y = 0.0 # Default is open left, right, down
-			elif not neighbors.has(Vector2.DOWN): rotation_y = 270.0
+			if not neighbors.has(Vector2.DOWN): rotation_y = 180.0
+			elif not neighbors.has(Vector2.LEFT): rotation_y = 90.0
+			elif not neighbors.has(Vector2.UP): rotation_y = 0.0
+			elif not neighbors.has(Vector2.RIGHT): rotation_y = 270.0
 		4:
 			road_type = "crossroad"
 		_:
@@ -134,7 +144,6 @@ func _create_road_piece(grid_pos: Vector2, type: String, rotation_y: float):
 		instance.set_meta("model_path", model_path)
 		instance.set_meta("model_scale", 1.0)
 		instance.set_meta("uses_grid_snap", true)
-		# NEW: Add a meta tag to identify road builder pieces.
 		instance.set_meta("is_road", true) 
 		
 		level_editor._configure_shadows_for_node(instance)
