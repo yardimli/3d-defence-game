@@ -397,49 +397,62 @@ func _on_grid_snap_toggled(should_snap: bool):
 # INPUT & CAMERA CONTROLS
 # ==========================================
 
-# NEW: Centralized function to handle deletion via right-click.
-# Returns true if an object was deleted, false otherwise.
+# MODIFIED: Replaced the old logic with a more robust right-click delete handler.
+# This function now correctly deletes assets under the cursor based on the active mode.
 func _handle_right_click_delete(mouse_pos: Vector2) -> bool:
 	_update_cursor(mouse_pos)
 	var grid_pos = Vector2(cursor.position.x, cursor.position.z)
 
-	# Priority 1: If road builder is on, try to delete a road piece.
+	# If there's nothing on the tile, we can't delete anything.
+	if not grid_data.has(grid_pos) or grid_data[grid_pos].is_empty():
+		return false
+
+	var models_on_tile: Array = grid_data[grid_pos]
+	var instance_to_delete: Node3D = null
+	var was_road = false
+
 	if is_road_builder_enabled:
-		var road_node = road_builder.get_road_node_at(grid_pos)
-		if is_instance_valid(road_node):
-			var road_grid_pos = _get_grid_pos_for_instance(road_node)
-			# Delete it from grid_data
-			var models_on_tile: Array = grid_data[road_grid_pos]
-			models_on_tile.erase(road_node)
-			if models_on_tile.is_empty():
-				grid_data.erase(road_grid_pos)
-			# Free the node
-			road_node.queue_free()
-			# Update neighbors
-			road_builder.on_model_deleted(road_grid_pos)
-			_mark_as_modified()
-			return true
-	# Priority 2: If an asset is selected, try to delete that.
-	elif is_instance_valid(selected_instance):
-		var selected_grid_pos = _get_grid_pos_for_instance(selected_instance)
-		# Only delete if the cursor is on the same tile as the selected instance.
-		if grid_pos == selected_grid_pos:
-			var instance_to_delete = selected_instance
-			_deselect_instance() # This clears selected_instance
+		# In road mode, find and target the road piece specifically.
+		for model in models_on_tile:
+			if is_instance_valid(model) and model.get_meta("is_road", false):
+				instance_to_delete = model
+				was_road = true
+				break # Found the road, stop searching.
+	else:
+		# In normal mode, target the top-most item, but only if it's NOT a road.
+		var top_model = models_on_tile.back()
+		if is_instance_valid(top_model) and not top_model.get_meta("is_road", false):
+			instance_to_delete = top_model
+			was_road = false
+
+	# If we found a valid target for deletion...
+	if is_instance_valid(instance_to_delete):
+		# If the deleted object was the currently selected one, deselect it first.
+		if selected_instance == instance_to_delete:
+			_deselect_instance()
+
+		# Remove from the grid data array.
+		models_on_tile.erase(instance_to_delete)
+		
+		# If the tile is now empty, remove the grid position key.
+		if models_on_tile.is_empty():
+			grid_data.erase(grid_pos)
+		
+		# Delete the node from the scene.
+		instance_to_delete.queue_free()
+		
+		# After deletion, update visuals and data.
+		if was_road:
+			# If a road was deleted, tell the road builder to update neighbors.
+			road_builder.on_model_deleted(grid_pos)
+		else:
+			# If a regular asset was deleted, just recalculate the stack heights.
+			_recalculate_stack_y_positions(grid_pos)
 			
-			# Remove from grid_data
-			var models_on_tile: Array = grid_data[selected_grid_pos]
-			models_on_tile.erase(instance_to_delete)
-			if models_on_tile.is_empty():
-				grid_data.erase(selected_grid_pos)
-			
-			instance_to_delete.queue_free()
-			
-			# Recalculate stack if other things remain on the tile
-			_recalculate_stack_y_positions(selected_grid_pos)
-			_mark_as_modified()
-			return true
-	
+		_mark_as_modified()
+		return true # Deletion was successful.
+
+	# No valid target was found for deletion in the current mode.
 	return false
 
 func _unhandled_input(event):
@@ -486,7 +499,7 @@ func _unhandled_input(event):
 		(properties_panel.visible and properties_panel.get_global_rect().has_point(mouse_pos)):
 			return
 		
-		# NEW: Handle right-click for specific deletion actions.
+		# MODIFIED: Handle right-click for specific deletion actions.
 		if event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
 			# If the delete handler succeeds, it means a "delete click" occurred,
 			# so we consume the event to prevent camera rotation from starting.
