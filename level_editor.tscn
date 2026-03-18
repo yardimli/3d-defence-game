@@ -56,6 +56,13 @@ size_flags_horizontal = 3
 theme_override_font_sizes/font_size = 20
 text = " Props "
 
+[node name="ButtonSaveAs" type="Button" parent="UI/TopToolbar/MarginContainer/HBoxContainer" unique_id=341605977]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 20
+text = " Save As... "
+
 [node name="ButtonSave" type="Button" parent="UI/TopToolbar/MarginContainer/HBoxContainer" unique_id=341605976]
 unique_name_in_owner = true
 layout_mode = 2
@@ -110,6 +117,21 @@ unique_name_in_owner = true
 
 [node name="PropertiesPanel" parent="UI" unique_id=303030303 instance=ExtResource("6_prop")]
 unique_name_in_owner = true
+
+[node name="StatusPanel" type="PanelContainer" parent="UI" unique_id=4000000001]
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_top = -40.0
+offset_right = 250.0
+grow_vertical = 0
+
+[node name="StatusLabel" type="Label" parent="UI/StatusPanel" unique_id=4000000002]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Untitled"
+horizontal_alignment = 1
+vertical_alignment = 1
 
 [node name="SunSettings" parent="UI" unique_id=1504610152 instance=ExtResource("3_u007t")]
 unique_name_in_owner = true

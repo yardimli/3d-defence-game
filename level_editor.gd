@@ -18,6 +18,9 @@ var is_dragging_instance := false
 var last_painted_grid_pos := Vector2.INF
 var original_drag_grid_pos := Vector2.INF
 var allow_same_asset_stacking := false
+# NEW: State variables for tracking the current file and modification status.
+var current_scene_name: String = ""
+var is_modified := false
 
 # --- Nodes ---
 @onready var placed_models_container: Node3D = %PlacedModelsContainer
@@ -28,6 +31,8 @@ var allow_same_asset_stacking := false
 @onready var asset_selector: PanelContainer = %AssetSelector
 @onready var sun_settings: Window = %SunSettings
 @onready var save_load_manager: Window = %SaveLoadManager
+# NEW: Node reference for the "Save As" button.
+@onready var btn_save_as: Button = %ButtonSaveAs
 @onready var btn_save: Button = %ButtonSave
 @onready var btn_load: Button = %ButtonLoad
 @onready var btn_rotate: Button = %ButtonRotate
@@ -39,6 +44,8 @@ var allow_same_asset_stacking := false
 @onready var btn_properties: Button = %ButtonProperties
 @onready var properties_panel: PanelContainer = %PropertiesPanel
 @onready var btn_cycle_selection: Button = %ButtonCycleSelection
+# NEW: Node reference for the status label in the bottom-left corner.
+@onready var status_label: Label = %StatusLabel
 
 # --- Materials ---
 var ghost_material: StandardMaterial3D
@@ -62,6 +69,9 @@ func _ready():
 	material.albedo_color = Color(1.0, 0.5, 0.0, 0.5) 
 	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA 
 	cursor.material_override = material	
+	
+	# NEW: Initialize the status label on startup.
+	_update_status_label()
 
 func _process(delta):
 	camera_pivot.rotation_degrees.x = lerp(camera_pivot.rotation_degrees.x, cam_rot_x, delta * 15.0)
@@ -105,7 +115,9 @@ func _setup_materials():
 	selection_material.emission_energy_multiplier = 0.8
 
 func _connect_ui_signals():
-	btn_save.pressed.connect(save_load_manager.open)
+	# MODIFIED: The save and save as buttons now connect to new handlers.
+	btn_save.pressed.connect(_on_save_button_pressed)
+	btn_save_as.pressed.connect(_on_save_as_button_pressed)
 	btn_load.pressed.connect(save_load_manager.open)
 	btn_rotate.pressed.connect(_rotate_placement)
 	btn_delete.pressed.connect(_delete_model_at_cursor)
@@ -121,6 +133,8 @@ func _connect_ui_signals():
 	properties_panel.position_changed.connect(_on_properties_position_changed)
 	properties_panel.scale_changed.connect(_on_properties_scale_changed)
 	properties_panel.order_changed.connect(_on_properties_order_changed)
+	# NEW: Connect the new signal from the properties panel for toggling grid snap.
+	properties_panel.grid_snap_toggled.connect(_on_grid_snap_toggled)
 	
 	asset_selector.model_selected.connect(_on_model_selected)
 	asset_selector.selection_cleared.connect(_deselect_model)
@@ -206,6 +220,7 @@ func _deselect_instance():
 # ==========================================
 func _rotate_placement():
 	if is_instance_valid(selected_instance):
+		_mark_as_modified() # NEW: Track modification.
 		selected_instance.rotation_degrees.y = fmod(selected_instance.rotation_degrees.y + 90.0, 360.0)
 		return
 	placement_rotation_y = fmod(placement_rotation_y + 90.0, 360.0)
@@ -243,6 +258,7 @@ func _delete_model_at_cursor():
 	# NEW: After deleting, recalculate the Y positions of remaining items in the stack.
 	if grid_pos_to_update != Vector2.INF:
 		_recalculate_stack_y_positions(grid_pos_to_update)
+	_mark_as_modified() # NEW: Track modification.
 
 # ==========================================
 # UI CALLBACKS
@@ -282,8 +298,33 @@ func _on_setting_changed(setting_name: String, new_value: Variant):
 func _on_preview_settings_changed(settings: Dictionary):
 	asset_selector.apply_preview_overrides(settings)
 
+# NEW: Handles the main "Save" button press.
+func _on_save_button_pressed():
+	# If we don't have a name/path yet, it behaves like "Save As".
+	if current_scene_name.is_empty():
+		save_load_manager.open()
+	else:
+		# Otherwise, save directly to the known file.
+		_save_scene(current_scene_name)
+
+# NEW: Handles the "Save As" button press, which always opens the dialog.
+func _on_save_as_button_pressed():
+	save_load_manager.open()
+
+# NEW: Marks the scene as modified and updates the UI label.
+func _mark_as_modified():
+	if not is_modified:
+		is_modified = true
+		_update_status_label()
+
+# NEW: Updates the text of the status label in the bottom-left corner.
+func _update_status_label():
+	var file_text = current_scene_name if not current_scene_name.is_empty() else "Untitled"
+	var modified_star = " *" if is_modified else ""
+	status_label.text = file_text + modified_star
+
 # ==========================================
-# NEW: PROPERTIES PANEL HANDLERS
+# PROPERTIES PANEL HANDLERS
 # ==========================================
 # NEW: Handles position changes from the properties panel.
 func _on_properties_position_changed(new_pos: Vector3):
@@ -294,6 +335,7 @@ func _on_properties_position_changed(new_pos: Vector3):
 	# Mark the instance as off-grid so it no longer snaps.
 	selected_instance.set_meta("uses_grid_snap", false)
 	_update_grid_data_for_moved_instance(selected_instance, old_grid_pos)
+	_mark_as_modified() # NEW: Track modification.
 
 # NEW: Handles scale changes from the properties panel.
 func _on_properties_scale_changed(new_scale: float):
@@ -305,6 +347,7 @@ func _on_properties_scale_changed(new_scale: float):
 	# After scaling, recalculate the stack it's in.
 	var grid_pos = _get_grid_pos_for_instance(selected_instance)
 	_recalculate_stack_y_positions(grid_pos)
+	_mark_as_modified() # NEW: Track modification.
 
 # NEW: Handles re-ordering requests from the properties panel.
 func _on_properties_order_changed(direction: int):
@@ -323,6 +366,21 @@ func _on_properties_order_changed(direction: int):
 			_recalculate_stack_y_positions(grid_pos)
 			# Refresh the panel to update button states.
 			properties_panel.update_fields(selected_instance, models_on_tile, grid_pos)
+	_mark_as_modified() # NEW: Track modification.
+
+# NEW: Handles the toggle for grid snapping from the properties panel.
+func _on_grid_snap_toggled(should_snap: bool):
+	if not is_instance_valid(selected_instance): return
+	
+	selected_instance.set_meta("uses_grid_snap", should_snap)
+	
+	# If we are re-enabling snapping, move the object to the correct grid position.
+	if should_snap:
+		var grid_pos = _get_grid_pos_for_instance(selected_instance)
+		selected_instance.position.x = grid_pos.x
+		selected_instance.position.z = grid_pos.y
+		
+	_mark_as_modified() # NEW: Track modification.
 
 # ==========================================
 # INPUT & CAMERA CONTROLS
@@ -390,6 +448,7 @@ func _unhandled_input(event):
 			else:
 				if is_dragging_instance and is_instance_valid(selected_instance):
 					_update_grid_data_for_moved_instance(selected_instance, original_drag_grid_pos)
+					_mark_as_modified() # NEW: Track modification.
 				is_painting = false
 				is_dragging_instance = false
 
@@ -573,6 +632,7 @@ func _place_model():
 		placed_models_container.add_child(instance)
 		models_on_tile.append(instance)
 		last_painted_grid_pos = grid_pos
+		_mark_as_modified() # NEW: Track modification.
 
 # MODIFIED: Saves the new "uses_grid_snap" meta tag.
 func _save_scene(scene_name: String):
@@ -599,6 +659,11 @@ func _save_scene(scene_name: String):
 	var file = FileAccess.open(save_path, FileAccess.WRITE)
 	file.store_string(JSON.stringify(full_save_data, "\t"))
 	file.close()
+	
+	# NEW: After saving, update the state and UI.
+	current_scene_name = scene_name
+	is_modified = false
+	_update_status_label()
 
 # MODIFIED: Loads the new "uses_grid_snap" meta tag.
 func _load_scene(scene_name: String):
@@ -642,4 +707,11 @@ func _load_scene(scene_name: String):
 		return
 	for grid_pos in grid_data:
 		grid_data[grid_pos].sort_custom(func(a, b): return a.position.y < b.position.y)
+		
+	# NEW: After loading, update the state and UI.
+	current_scene_name = scene_name
+	is_modified = false
+	_update_status_label()
+	_deselect_instance()
+	_deselect_model()
 	print("Loaded successfully!")

@@ -7,6 +7,9 @@ signal load_requested(scene_name: String)
 
 const SAVE_DIR = "user://levels/"
 
+# --- State ---
+var _is_updating_text_from_selection := false
+
 # --- Node-Referenzen ---
 @onready var scene_name_edit: LineEdit = %SceneNameEdit
 @onready var save_button: Button = %SaveButton
@@ -14,7 +17,7 @@ const SAVE_DIR = "user://levels/"
 @onready var scene_list: ItemList = %SceneList
 
 func _ready():
-	# NEW: Make the window modal, which blocks input to the main scene when visible.
+	# Make the window modal, which blocks input to the main scene when visible.
 	exclusive = true
 	
 	# Ensure the save directory exists.
@@ -24,6 +27,8 @@ func _ready():
 	save_button.pressed.connect(_on_save_pressed)
 	load_button.pressed.connect(_on_load_pressed)
 	scene_list.item_selected.connect(_on_scene_selected)
+	# MODIFIED: Connect item_activated to its own dedicated handler.
+	scene_list.item_activated.connect(_on_item_activated)
 	scene_name_edit.text_changed.connect(_on_scene_name_text_changed)
 	close_requested.connect(hide)
 	
@@ -53,15 +58,21 @@ func _refresh_scene_list():
 			scene_list.add_item(file_name.get_basename())
 		file_name = dir.get_next()
 
-# Called when the text in the name input changes.
 func _on_scene_name_text_changed(new_text: String):
-	save_button.disabled = new_text.is_empty()
+	if _is_updating_text_from_selection:
+		return
 
-# Called when an item in the scene list is selected.
+	save_button.disabled = new_text.is_empty()
+	scene_list.deselect_all()
+	load_button.disabled = true
+
 func _on_scene_selected(_index: int):
 	load_button.disabled = false
 	var selected_name = scene_list.get_item_text(scene_list.get_selected_items()[0])
+	
+	_is_updating_text_from_selection = true
 	scene_name_edit.text = selected_name
+	_is_updating_text_from_selection = false
 
 # Emits the save signal and closes the dialog.
 func _on_save_pressed():
@@ -70,10 +81,18 @@ func _on_save_pressed():
 		emit_signal("save_requested", scene_name)
 		hide()
 
-# Emits the load signal and closes the dialog.
+# Emits the load signal when the "Load" button is clicked.
 func _on_load_pressed():
 	var selected_items = scene_list.get_selected_items()
 	if not selected_items.is_empty():
 		var scene_name = scene_list.get_item_text(selected_items[0])
+		emit_signal("load_requested", scene_name)
+		hide()
+
+# NEW: Handles the item_activated signal from the ItemList (double-click or Enter).
+func _on_item_activated(index: int):
+	# The signal provides the index directly, which is more reliable than checking selection.
+	var scene_name = scene_list.get_item_text(index)
+	if not scene_name.is_empty():
 		emit_signal("load_requested", scene_name)
 		hide()
