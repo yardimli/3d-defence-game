@@ -112,6 +112,8 @@ func _connect_ui_signals():
 	btn_sun.pressed.connect(_on_sun_config_pressed)
 	btn_settings.pressed.connect(_on_settings_button_pressed)
 	settings_dialog.setting_changed.connect(_on_setting_changed)
+	# NEW: Connect the signal for preview setting changes.
+	settings_dialog.preview_settings_changed.connect(_on_preview_settings_changed)
 	
 	# NEW: Connect properties panel and cycle selection buttons and signals.
 	btn_properties.pressed.connect(properties_panel.toggle_visibility)
@@ -258,16 +260,27 @@ func _on_sun_settings_updated(new_settings: Dictionary):
 	sun_light.rotation_degrees = new_settings.get("rotation_degrees", sun_light.rotation_degrees)
 	sun_light.light_energy = new_settings.get("energy", sun_light.light_energy)
 
+# MODIFIED: Now also gets preview settings to populate the dialog.
 func _on_settings_button_pressed():
+	# Get general editor settings.
 	var current_settings = {
 		"allow_same_asset_stacking": allow_same_asset_stacking
 	}
+	# NEW: Get current preview settings from the asset selector.
+	var preview_settings = asset_selector.get_current_preview_settings()
+	# NEW: Merge the two dictionaries so all data is passed to the dialog.
+	current_settings.merge(preview_settings)
+	
 	settings_dialog.open_with_settings(current_settings)
 
 func _on_setting_changed(setting_name: String, new_value: Variant):
 	if setting_name == "allow_same_asset_stacking":
 		allow_same_asset_stacking = new_value
 		print("Allow same asset stacking set to: ", allow_same_asset_stacking)
+
+# NEW: Handles the new signal from the settings dialog to apply preview overrides.
+func _on_preview_settings_changed(settings: Dictionary):
+	asset_selector.apply_preview_overrides(settings)
 
 # ==========================================
 # NEW: PROPERTIES PANEL HANDLERS

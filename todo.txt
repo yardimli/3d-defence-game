@@ -2,23 +2,14 @@ TODO:
 
 make the game a sandbox game
 
+in properties panel add option to switch position from free drag back to tile position and visa verse
 
-add properties button to open/close a panel on the left side of the screen, allow user to see/edit the selected assets position, and size and y position. for position show both grid position and also real x and z, if user edits x and z then dont use grid position for that asset 
-create a new gd and tscn file for the properties panel
+add road building function so road tiles adjust based on other road tiles around them to connect properly and rotate
+allow user to add cars to roads, when a car is dragged on top of a road tile it should start moving on the road and when getting to an intersection it will randomly choose a direction and turn towards it and continue driving. when it reaches the end of the road it should u turn back. when another car is its way it should stop and not crash or overlap other car. if the cars cant pass each other they both should make an u-turn.
+add option to add turrets to cars. 
+turrets should fire bullets on enemies that spawn outside the city and move towards the city.
+bullets should fly and explode on contact with any object.
 
-allow user to change z-index of a tile to push it down or up add buttons for up/down in the property panel for changing z-order, only enable them if the tile has more than one asset on it. the up/down should recalcute the y positions of the tiles
-add hotkey and button to change selection when multiple assets are on the same tile to the toolbar
-
-
-
-add building/vehicle with turret designer
-buildings should have health/energy  properties that can be edited
-vehicles should have health/energy/movement properties that can be edited
-turrets should have properties
-add bullet types that turrets will fire, bullets should have properties
-allow user to place buildings with turrets and vehicles with turrets to the main scene
-
-add bullet flying and crash explosion
 
 
 DONE:
@@ -28,3 +19,10 @@ add config for each asset subfolder. it should look for a config.cfg inside each
 settings file should also contain cam position, lookat values and a zoom factor default to 1
 in config file allow user to set model scale for individual meshes as well
 allow user to drag around already added assets and rotate them, dont allow stacking unless a new settings dialog checkbox is checked
+
+add properties button to open/close a panel on the left side of the screen, allow user to see/edit the selected assets position, and size and y position. for position show both grid position and also real x and z, if user edits x and z then dont use grid position for that asset 
+create a new gd and tscn file for the properties panel
+
+allow user to change z-index of a tile to push it down or up add buttons for up/down in the property panel for changing z-order, only enable them if the tile has more than one asset on it. the up/down should recalcute the y positions of the tiles
+add hotkey and button to change selection when multiple assets are on the same tile to the toolbar
+

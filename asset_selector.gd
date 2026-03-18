@@ -14,6 +14,10 @@ var selected_button: Button = null
 # NEW: ConfigFile objects to hold root and folder-specific settings.
 var root_config := ConfigFile.new()
 var folder_config: ConfigFile = null
+# NEW: Holds the path of the currently viewed folder.
+var current_folder_path: String = ""
+# NEW: Holds temporary override settings from the settings dialog.
+var preview_overrides: Dictionary = {}
 
 # --- Node-Referenzen ---
 @onready var folder_dropdown: OptionButton = %FolderDropdown
@@ -30,6 +34,37 @@ func _ready():
 	folder_dropdown.item_selected.connect(_on_folder_selected)
 	# Initial population of the asset list.
 	_populate_folder_dropdown()
+
+# NEW: Public method for the level editor to apply temporary settings.
+func apply_preview_overrides(settings: Dictionary):
+	preview_overrides = settings
+	# Refresh the previews with the new override settings.
+	if not current_folder_path.is_empty():
+		_populate_model_previews(current_folder_path)
+
+# NEW: Public method for the level editor to get current settings for the dialog.
+func get_current_preview_settings() -> Dictionary:
+	var cam_settings = _get_camera_settings()
+	var default_scale = root_config.get_value("Settings", "model_scale", 1.0)
+	if folder_config and folder_config.has_section_key("Settings", "model_scale"):
+		default_scale = folder_config.get_value("Settings", "model_scale")
+
+	# Start with the base settings.
+	var settings = {
+		"model_scale": default_scale,
+		"position": cam_settings.get("position"),
+		"look_at": cam_settings.get("look_at")
+	}
+	
+	# If overrides exist, let them take precedence.
+	if preview_overrides.has("model_scale"):
+		settings["model_scale"] = preview_overrides["model_scale"]
+	if preview_overrides.has("position"):
+		settings["position"] = preview_overrides["position"]
+	if preview_overrides.has("look_at"):
+		settings["look_at"] = preview_overrides["look_at"]
+		
+	return settings
 
 # Scans the models_folder for subdirectories and adds them to the dropdown.
 func _populate_folder_dropdown():
@@ -66,20 +101,23 @@ func _populate_folder_dropdown():
 		folder_dropdown.select(index_to_select)
 		_on_folder_selected(index_to_select)
 
-# Handles the selection of a new folder from the dropdown.
+# MODIFIED: Handles the selection of a new folder from the dropdown.
 func _on_folder_selected(index: int):
+	# NEW: Clear any temporary overrides when changing folders.
+	preview_overrides.clear()
+	
 	var folder_name = folder_dropdown.get_item_text(index)
-	var full_path = models_folder.path_join(folder_name)
+	current_folder_path = models_folder.path_join(folder_name)
 	
 	# NEW: Attempt to load a config file from the selected subfolder.
-	var sub_config_path = full_path.path_join("config.cfg")
+	var sub_config_path = current_folder_path.path_join("config.cfg")
 	var sub_config = ConfigFile.new()
 	if sub_config.load(sub_config_path) == OK:
 		folder_config = sub_config
 	else:
 		folder_config = null # Reset if no config is found.
 		
-	_populate_model_previews(full_path)
+	_populate_model_previews(current_folder_path)
 
 # Clears and creates new model preview buttons for the given folder path.
 func _populate_model_previews(path: String):
@@ -110,10 +148,14 @@ func _populate_model_previews(path: String):
 		for model_path in model_paths:
 			_create_model_preview_button(model_path)
 
-# NEW: Helper function to get the correct scale for a model.
-# It checks the folder config first, then the root config, then uses the default scale.
+# MODIFIED: Helper function to get the correct scale for a model.
+# It now checks for an override value first.
 func _get_scale_for_model(model_path: String) -> float:
 	var model_filename = model_path.get_file()
+	
+	# 0. Check for a temporary override from the settings dialog.
+	if preview_overrides.has("model_scale"):
+		return preview_overrides.get("model_scale")
 	
 	# 1. Check for per-model scale in the folder's config.cfg
 	if folder_config and folder_config.has_section_key("ModelScales", model_filename):
@@ -130,28 +172,36 @@ func _get_scale_for_model(model_path: String) -> float:
 	# 4. Fallback to the default scale from the root config.cfg
 	return root_config.get_value("Settings", "model_scale", 1.0)
 
-# NEW: Helper function to get camera settings for the preview.
-# It checks the folder config first, then the root config, then uses default values.
+# MODIFIED: Helper function to get camera settings for the preview.
+# It now checks for override values first.
 func _get_camera_settings() -> Dictionary:
 	var default_pos = Vector3(0, 1.0, 2.5)
 	var default_look_at = Vector3(0, 0, 0)
+	var settings: Dictionary
 
 	# 1. Check for settings in the folder's config.cfg
 	if folder_config and folder_config.has_section("AssetPreviewCamera"):
-		return {
+		settings = {
 			"position": folder_config.get_value("AssetPreviewCamera", "position", default_pos),
 			"look_at": folder_config.get_value("AssetPreviewCamera", "look_at", default_look_at)
 		}
-
 	# 2. Check for settings in the root config.cfg
-	if root_config and root_config.has_section("AssetPreviewCamera"):
-		return {
+	elif root_config and root_config.has_section("AssetPreviewCamera"):
+		settings = {
 			"position": root_config.get_value("AssetPreviewCamera", "position", default_pos),
 			"look_at": root_config.get_value("AssetPreviewCamera", "look_at", default_look_at)
 		}
-
 	# 3. Fallback to hardcoded defaults
-	return {"position": default_pos, "look_at": default_look_at}
+	else:
+		settings = {"position": default_pos, "look_at": default_look_at}
+
+	# 4. Apply temporary overrides if they exist.
+	if preview_overrides.has("position"):
+		settings["position"] = preview_overrides["position"]
+	if preview_overrides.has("look_at"):
+		settings["look_at"] = preview_overrides["look_at"]
+		
+	return settings
 
 # Creates a single preview button for a given model path.
 func _create_model_preview_button(path: String):
@@ -190,7 +240,8 @@ func _create_model_preview_button(path: String):
 	vp.add_child(cam)
 	# NEW: Apply settings from config or fallback to defaults.
 	cam.position = cam_settings.get("position")
-	cam.look_at(cam_settings.get("look_at"))
+	cam.call_deferred("look_at", cam_settings.get("look_at"))
+
 	
 	var env = Environment.new()
 	env.background_mode = Environment.BG_COLOR
@@ -207,38 +258,9 @@ func _create_model_preview_button(path: String):
 	if scene:
 		var instance = scene.instantiate()
 		vp.add_child(instance)
-		# Defer fitting to the next frame to ensure nodes are ready.
-		get_tree().process_frame.connect(_fit_model_to_preview.bind(instance, cam), CONNECT_ONE_SHOT)
 
 	model_list.add_child(btn)
 	preview_buttons.append({"btn": btn, "path": path})
-
-# Scales and positions a model instance to fit nicely within its preview camera.
-func _fit_model_to_preview(instance: Node3D, cam: Camera3D):
-	var meshes =[]
-	_get_mesh_instances(instance, meshes)
-	if meshes.is_empty(): return
-	
-	var bounds = AABB()
-	var first = true
-	for mi in meshes:
-		var mi_aabb = mi.get_aabb()
-		var xform = instance.global_transform.affine_inverse() * mi.global_transform
-		var transformed_aabb = xform * mi_aabb
-		if first:
-			bounds = transformed_aabb
-			first = false
-		else:
-			bounds = bounds.merge(transformed_aabb)
-			
-	var max_size = max(bounds.size.x, max(bounds.size.y, bounds.size.z))
-	if max_size > 0.001:
-		var fit_scale = 2.0 / max_size
-		instance.scale = Vector3.ONE * fit_scale
-		instance.position = -bounds.get_center() * fit_scale
-		# MODIFIED: The camera's look_at is now controlled by config files,
-		# so we no longer force it to look at the model's center here.
-		# cam.look_at(instance.position)
 
 # Recursively finds all MeshInstance3D nodes under a given node.
 func _get_mesh_instances(node: Node, result: Array):
