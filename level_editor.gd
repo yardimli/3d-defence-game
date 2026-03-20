@@ -56,14 +56,8 @@ var tree_density := 2.0 # percentage
 var ghost_material: StandardMaterial3D
 var selection_material: StandardMaterial3D
 
-# --- Camera State ---
-var cam_zoom := 10.0
-var cam_rot_x := -45.0
-var cam_rot_y := 45.0
-
 # --- Custom Modules ---
 var road_builder
-# NEW: Modules for Skybox and Terrain
 var skybox
 var terrain_generator
 
@@ -74,17 +68,16 @@ func _ready():
 	road_builder = load("res://road_builder.gd").new()
 	road_builder.initialize(self, placed_models_container, grid_data)
 	
-	# NEW: Instantiate Skybox
 	skybox = load("res://skybox.gd").new()
 	add_child(skybox)
 	skybox.set_cloud_density(cloud_density)
 	skybox.set_cloud_speed(cloud_speed)
 	
-	# NEW: Instantiate Terrain Generator
 	terrain_generator = load("res://terrain_generator.gd").new()
 	add_child(terrain_generator)
 	terrain_generator.set_settings(terrain_width, terrain_depth, tree_density / 100.0)
-	terrain_generator.initialize(tile_x, tile_z)
+	# MODIFIED: Pass self to allow terrain generator to place trees as normal assets
+	terrain_generator.initialize(tile_x, tile_z, self)
 	
 	_connect_ui_signals()
 	
@@ -99,11 +92,6 @@ func _ready():
 	
 	_update_status_label()
 
-func _process(delta):
-	camera_pivot.rotation_degrees.x = lerp(camera_pivot.rotation_degrees.x, cam_rot_x, delta * 15.0)
-	camera_pivot.rotation_degrees.y = lerp(camera_pivot.rotation_degrees.y, cam_rot_y, delta * 15.0)
-	camera.position.z = lerp(camera.position.z, cam_zoom, delta * 10.0)
-
 # ==========================================
 # SETUP & LOADING
 # ==========================================
@@ -114,15 +102,19 @@ func _load_config():
 		tile_x = float(config.get_value("Settings", "tile_size_x", 2.0))
 		tile_z = float(config.get_value("Settings", "tile_size_z", 2.0))
 		model_scale = float(config.get_value("Settings", "model_scale", 1.0))
-		cam_zoom = float(config.get_value("Camera", "zoom", 10.0))
-		cam_rot_x = float(config.get_value("Camera", "rotation_x", -45.0))
-		cam_rot_y = float(config.get_value("Camera", "rotation_y", 45.0))
+		
+		if camera_pivot and camera_pivot.has_method("set_config"):
+			camera_pivot.set_config(
+				float(config.get_value("Camera", "zoom", 10.0)),
+				float(config.get_value("Camera", "rotation_x", -45.0)),
+				float(config.get_value("Camera", "rotation_y", 45.0))
+			)
+			
 		sun_light.light_energy = float(config.get_value("Sun", "energy", 1.0))
 		var sun_rot_x = float(config.get_value("Sun", "rotation_x", -50.0))
 		var sun_rot_y = float(config.get_value("Sun", "rotation_y", -30.0))
 		sun_light.rotation_degrees = Vector3(sun_rot_x, sun_rot_y, 0)
 		
-		# NEW: Load Skybox and Terrain settings
 		cloud_density = float(config.get_value("Skybox", "cloud_density", 0.5))
 		cloud_speed = float(config.get_value("Skybox", "cloud_speed", 0.02))
 		terrain_width = int(config.get_value("Terrain", "width", 100))
@@ -190,7 +182,6 @@ func _deselect_model():
 		ghost_instance = null
 	_deselect_instance()
 	asset_selector.clear_selection()
-	print("Selection cleared.")
 
 func _create_ghost(path: String):
 	if is_instance_valid(ghost_instance):
@@ -236,7 +227,7 @@ func _select_instance(instance: Node3D):
 	selected_instance = instance
 	_apply_selection_material(selected_instance)
 	
-	var grid_pos = _get_grid_pos_for_instance(selected_instance)
+	var grid_pos = GridUtils.get_grid_pos(selected_instance.position, tile_x, tile_z)
 	var models_on_tile = grid_data.get(grid_pos,[])
 	properties_panel.update_fields(selected_instance, models_on_tile, grid_pos)
 
@@ -245,6 +236,29 @@ func _deselect_instance():
 		_clear_material_overlay(selected_instance)
 		selected_instance = null
 		properties_panel.clear_and_hide()
+
+# ==========================================
+# BOUNDS CHECKING
+# ==========================================
+# NEW: Check if a position is within the generated terrain bounds
+func _is_within_terrain_bounds(pos: Vector2) -> bool:
+	var min_x = - (terrain_width / 2.0) * tile_x
+	var max_x = (terrain_width / 2.0 - 1) * tile_x
+	var min_z = - (terrain_depth / 2.0) * tile_z
+	var max_z = (terrain_depth / 2.0 - 1) * tile_z
+	
+	return pos.x >= min_x - 0.01 and pos.x <= max_x + 0.01 and pos.y >= min_z - 0.01 and pos.y <= max_z + 0.01
+
+# NEW: Helper to get grid pos from mouse
+func _get_grid_pos_from_mouse(mouse_pos: Vector2) -> Vector2:
+	var origin = camera.project_ray_origin(mouse_pos)
+	var dir = camera.project_ray_normal(mouse_pos)
+	if dir.y >= 0: return Vector2.INF
+	var t = -origin.y / dir.y
+	var intersection = origin + dir * t
+	var sn_x = round(intersection.x / tile_x) * tile_x
+	var sn_z = round(intersection.z / tile_z) * tile_z
+	return Vector2(sn_x, sn_z)
 
 # ==========================================
 # PLACEMENT, ROTATION & DELETION
@@ -266,7 +280,7 @@ func _delete_model_at_cursor():
 	var was_road = false
 
 	if is_instance_valid(instance_to_delete):
-		grid_pos_to_update = _get_grid_pos_for_instance(instance_to_delete)
+		grid_pos_to_update = GridUtils.get_grid_pos(instance_to_delete.position, tile_x, tile_z)
 		was_road = instance_to_delete.get_meta("is_road", false)
 		_deselect_instance()
 		if grid_data.has(grid_pos_to_update):
@@ -294,7 +308,7 @@ func _delete_model_at_cursor():
 		if was_road:
 			road_builder.on_model_deleted(grid_pos_to_update)
 		else:
-			_recalculate_stack_y_positions(grid_pos_to_update)
+			GridUtils.recalculate_stack_y_positions(grid_pos_to_update, grid_data)
 			
 	_mark_as_modified()
 
@@ -322,7 +336,6 @@ func _on_sun_settings_updated(new_settings: Dictionary):
 	sun_light.rotation_degrees = new_settings.get("rotation_degrees", sun_light.rotation_degrees)
 	sun_light.light_energy = new_settings.get("energy", sun_light.light_energy)
 
-# MODIFIED: Include new settings when opening the dialog.
 func _on_settings_button_pressed():
 	var current_settings = {
 		"allow_same_asset_stacking": allow_same_asset_stacking,
@@ -337,7 +350,6 @@ func _on_settings_button_pressed():
 	
 	settings_dialog.open_with_settings(current_settings)
 
-# MODIFIED: Handle new settings updates.
 func _on_setting_changed(setting_name: String, new_value: Variant):
 	if setting_name == "allow_same_asset_stacking":
 		allow_same_asset_stacking = new_value
@@ -385,7 +397,14 @@ func _update_status_label():
 func _on_properties_position_changed(new_pos: Vector3):
 	if not is_instance_valid(selected_instance): return
 	
-	var old_grid_pos = _get_grid_pos_for_instance(selected_instance)
+	# MODIFIED: Prevent moving outside bounds via properties panel
+	var new_grid_pos = GridUtils.get_grid_pos(new_pos, tile_x, tile_z)
+	if not _is_within_terrain_bounds(new_grid_pos):
+		var old_grid_pos = GridUtils.get_grid_pos(selected_instance.position, tile_x, tile_z)
+		properties_panel.update_fields(selected_instance, grid_data.get(old_grid_pos,[]), old_grid_pos)
+		return
+	
+	var old_grid_pos = GridUtils.get_grid_pos(selected_instance.position, tile_x, tile_z)
 	selected_instance.position = new_pos
 	selected_instance.set_meta("uses_grid_snap", false)
 	_update_grid_data_for_moved_instance(selected_instance, old_grid_pos)
@@ -397,14 +416,14 @@ func _on_properties_scale_changed(new_scale: float):
 	selected_instance.scale = Vector3.ONE * new_scale
 	selected_instance.set_meta("model_scale", new_scale)
 	
-	var grid_pos = _get_grid_pos_for_instance(selected_instance)
-	_recalculate_stack_y_positions(grid_pos)
+	var grid_pos = GridUtils.get_grid_pos(selected_instance.position, tile_x, tile_z)
+	GridUtils.recalculate_stack_y_positions(grid_pos, grid_data)
 	_mark_as_modified()
 
 func _on_properties_order_changed(direction: int):
 	if not is_instance_valid(selected_instance): return
 	
-	var grid_pos = _get_grid_pos_for_instance(selected_instance)
+	var grid_pos = GridUtils.get_grid_pos(selected_instance.position, tile_x, tile_z)
 	var models_on_tile: Array = grid_data.get(grid_pos,[])
 	
 	if models_on_tile.size() > 1:
@@ -414,7 +433,7 @@ func _on_properties_order_changed(direction: int):
 		if new_index >= 0 and new_index < models_on_tile.size():
 			models_on_tile.remove_at(current_index)
 			models_on_tile.insert(new_index, selected_instance)
-			_recalculate_stack_y_positions(grid_pos)
+			GridUtils.recalculate_stack_y_positions(grid_pos, grid_data)
 			properties_panel.update_fields(selected_instance, models_on_tile, grid_pos)
 	_mark_as_modified()
 
@@ -424,7 +443,7 @@ func _on_grid_snap_toggled(should_snap: bool):
 	selected_instance.set_meta("uses_grid_snap", should_snap)
 	
 	if should_snap:
-		var grid_pos = _get_grid_pos_for_instance(selected_instance)
+		var grid_pos = GridUtils.get_grid_pos(selected_instance.position, tile_x, tile_z)
 		selected_instance.position.x = grid_pos.x
 		selected_instance.position.z = grid_pos.y
 		
@@ -435,8 +454,13 @@ func _on_grid_snap_toggled(should_snap: bool):
 # ==========================================
 
 func _handle_right_click_delete(mouse_pos: Vector2) -> bool:
+	var grid_pos = _get_grid_pos_from_mouse(mouse_pos)
+	
+	# MODIFIED: Prevent deleting if outside bounds
+	if grid_pos == Vector2.INF or not _is_within_terrain_bounds(grid_pos):
+		return false
+		
 	_update_cursor(mouse_pos)
-	var grid_pos = Vector2(cursor.position.x, cursor.position.z)
 
 	if not grid_data.has(grid_pos) or grid_data[grid_pos].is_empty():
 		return false
@@ -481,7 +505,7 @@ func _handle_right_click_delete(mouse_pos: Vector2) -> bool:
 	if was_road:
 		road_builder.on_model_deleted(grid_pos)
 	else:
-		_recalculate_stack_y_positions(grid_pos)
+		GridUtils.recalculate_stack_y_positions(grid_pos, grid_data)
 		
 	_mark_as_modified()
 	return true
@@ -489,12 +513,25 @@ func _handle_right_click_delete(mouse_pos: Vector2) -> bool:
 
 func _unhandled_input(event):
 	var mouse_pos = get_viewport().get_mouse_position()
+	
+	if asset_selector.get_global_rect().has_point(mouse_pos) or \
+	(sun_settings.visible and sun_settings.get_global_rect().has_point(mouse_pos)) or \
+	(save_load_manager.visible and save_load_manager.get_global_rect().has_point(mouse_pos)) or \
+	(settings_dialog.visible and settings_dialog.get_global_rect().has_point(mouse_pos)) or \
+	(properties_panel.visible and properties_panel.get_global_rect().has_point(mouse_pos)):
+		return
+
+	if camera_pivot.has_method("handle_input") and camera_pivot.handle_input(event):
+		get_viewport().set_input_as_handled()
+		return
+
 	if event is InputEventKey and event.pressed:
 		if event.keycode == KEY_ESCAPE: _deselect_model()
 		if event.keycode == KEY_R: _rotate_placement()
 		if event.keycode == KEY_D: _delete_model_at_cursor()
 		if event.keycode == KEY_C: _cycle_selection_on_tile()
 		if event.is_match(event): get_viewport().set_input_as_handled()
+		
 	if event is InputEventMouseMotion:
 		if selected_model_path != "" or is_dragging_instance or is_road_builder_enabled:
 			_update_cursor(mouse_pos)
@@ -505,40 +542,21 @@ func _unhandled_input(event):
 				_place_model()
 		elif is_dragging_instance and is_instance_valid(selected_instance):
 			_drag_selected_instance()
-		if Input.is_mouse_button_pressed(MOUSE_BUTTON_MIDDLE) or (Input.is_key_pressed(KEY_SHIFT) and Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)):
-			if asset_selector.get_global_rect().has_point(mouse_pos): return
-			var right = camera.global_transform.basis.x
-			var forward = camera.global_transform.basis.z
-			forward.y = 0; forward = forward.normalized()
-			var pan_speed = 0.01 * cam_zoom
-			camera_pivot.global_position -= (right * event.relative.x + forward * event.relative.y) * pan_speed
-		elif Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
-			if asset_selector.get_global_rect().has_point(mouse_pos): return
-			cam_rot_y -= event.relative.x * 0.4
-			cam_rot_x -= event.relative.y * 0.4
-			cam_rot_x = clamp(cam_rot_x, -89.0, -10.0)
-	if event is InputEventPanGesture:
-		if asset_selector.get_global_rect().has_point(mouse_pos): return
-		cam_zoom += event.delta.y * 0.5
-		cam_zoom = clamp(cam_zoom, 2.0, 60.0)
+			
 	elif event is InputEventMouseButton:
-		if asset_selector.get_global_rect().has_point(mouse_pos) or \
-		(sun_settings.visible and sun_settings.get_global_rect().has_point(mouse_pos)) or \
-		(save_load_manager.visible and save_load_manager.get_global_rect().has_point(mouse_pos)) or \
-		(settings_dialog.visible and settings_dialog.get_global_rect().has_point(mouse_pos)) or \
-		(properties_panel.visible and properties_panel.get_global_rect().has_point(mouse_pos)):
-			return
-		
 		if event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
 			if _handle_right_click_delete(mouse_pos):
 				get_viewport().set_input_as_handled()
 				return
 
-		if event.button_index == MOUSE_BUTTON_WHEEL_UP: cam_zoom -= 1.5
-		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN: cam_zoom += 1.5
-		cam_zoom = clamp(cam_zoom, 2.0, 60.0)
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			if event.pressed:
+				# MODIFIED: Prevent actions if clicked outside terrain bounds
+				var click_grid_pos = _get_grid_pos_from_mouse(mouse_pos)
+				if click_grid_pos == Vector2.INF or not _is_within_terrain_bounds(click_grid_pos):
+					_deselect_instance()
+					return
+					
 				if is_road_builder_enabled:
 					is_painting = true
 					last_painted_grid_pos = Vector2.INF
@@ -554,7 +572,7 @@ func _unhandled_input(event):
 						var model_to_select = grid_data[grid_pos].back()
 						_select_instance(model_to_select)
 						is_dragging_instance = true
-						original_drag_grid_pos = _get_grid_pos_for_instance(selected_instance)
+						original_drag_grid_pos = GridUtils.get_grid_pos(selected_instance.position, tile_x, tile_z)
 					else:
 						_deselect_instance()
 			else:
@@ -565,17 +583,16 @@ func _unhandled_input(event):
 				is_dragging_instance = false
 
 func _update_cursor(mouse_pos: Vector2):
-	var origin = camera.project_ray_origin(mouse_pos)
-	var dir = camera.project_ray_normal(mouse_pos)
-	if dir.y >= 0: return
-	var t = -origin.y / dir.y
-	var intersection = origin + dir * t
-	var sn_x = round(intersection.x / tile_x) * tile_x
-	var sn_z = round(intersection.z / tile_z) * tile_z
-	cursor.position = Vector3(sn_x, 0, sn_z)
+	# MODIFIED: Hide cursor and prevent interaction if outside bounds
+	var grid_pos = _get_grid_pos_from_mouse(mouse_pos)
+	if grid_pos == Vector2.INF or not _is_within_terrain_bounds(grid_pos):
+		cursor.visible = false
+		return
+		
+	cursor.visible = true
+	cursor.position = Vector3(grid_pos.x, 0, grid_pos.y)
 	
 	if is_instance_valid(ghost_instance) or is_dragging_instance:
-		var grid_pos = Vector2(sn_x, sn_z)
 		var y_offset = 0.0
 		
 		if grid_data.has(grid_pos):
@@ -593,9 +610,9 @@ func _update_cursor(mouse_pos: Vector2):
 					potential_stack_base.pop_back() 
 					if not potential_stack_base.is_empty():
 						var next_model_down = potential_stack_base.back()
-						y_offset = _get_node_top_y(next_model_down)
+						y_offset = GridUtils.get_node_top_y(next_model_down)
 				else:
-					y_offset = _get_node_top_y(top_model)
+					y_offset = GridUtils.get_node_top_y(top_model)
 		
 		if is_instance_valid(ghost_instance):
 			ghost_instance.position.y = y_offset
@@ -619,11 +636,15 @@ func _drag_selected_instance():
 	if selected_instance.get_meta("uses_grid_snap", true):
 		var sn_x = round(intersection.x / tile_x) * tile_x
 		var sn_z = round(intersection.z / tile_z) * tile_z
-		selected_instance.position.x = sn_x
-		selected_instance.position.z = sn_z
+		# MODIFIED: Restrict dragging to bounds
+		if _is_within_terrain_bounds(Vector2(sn_x, sn_z)):
+			selected_instance.position.x = sn_x
+			selected_instance.position.z = sn_z
 	else:
-		selected_instance.position.x = intersection.x
-		selected_instance.position.z = intersection.z
+		# MODIFIED: Restrict dragging to bounds
+		if _is_within_terrain_bounds(Vector2(intersection.x, intersection.z)):
+			selected_instance.position.x = intersection.x
+			selected_instance.position.z = intersection.z
 
 func _update_grid_data_for_moved_instance(instance: Node3D, old_grid_pos: Vector2):
 	if not is_instance_valid(instance): return
@@ -634,9 +655,9 @@ func _update_grid_data_for_moved_instance(instance: Node3D, old_grid_pos: Vector
 		if old_tile_models.is_empty():
 			grid_data.erase(old_grid_pos)
 		else:
-			_recalculate_stack_y_positions(old_grid_pos)
+			GridUtils.recalculate_stack_y_positions(old_grid_pos, grid_data)
 			
-	var new_grid_pos = _get_grid_pos_for_instance(instance)
+	var new_grid_pos = GridUtils.get_grid_pos(instance.position, tile_x, tile_z)
 	if not grid_data.has(new_grid_pos):
 		grid_data[new_grid_pos] =[]
 	var new_tile_models: Array = grid_data[new_grid_pos]
@@ -664,48 +685,15 @@ func _cycle_selection_on_tile():
 	var next_index = (current_selection_index + 1) % models_on_tile.size()
 	_select_instance(models_on_tile[next_index])
 
-func _get_grid_pos_for_instance(instance: Node3D) -> Vector2:
-	var x = round(instance.position.x / tile_x) * tile_x
-	var z = round(instance.position.z / tile_z) * tile_z
-	return Vector2(x, z)
-
-func _recalculate_stack_y_positions(grid_pos: Vector2):
-	var models_on_tile: Array = grid_data.get(grid_pos,[])
-	if models_on_tile.is_empty(): return
-	
-	var y_offset = 0.0
-	for i in range(models_on_tile.size()):
-		var model: Node3D = models_on_tile[i]
-		if is_instance_valid(model):
-			model.position.y = y_offset
-			y_offset = _get_node_top_y(model)
-
-func _configure_shadows_for_node(node: Node):
-	if node is MeshInstance3D:
-		node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
-	for child in node.get_children():
-		_configure_shadows_for_node(child)
-
-func _get_all_meshes(node: Node, meshes: Array):
-	if node is MeshInstance3D:
-		meshes.append(node)
-	for child in node.get_children():
-		_get_all_meshes(child, meshes)
-
-func _get_node_top_y(node: Node3D) -> float:
-	var meshes =[]
-	_get_all_meshes(node, meshes)
-	if meshes.is_empty(): return node.global_position.y
-	var max_y = -INF
-	for mi in meshes:
-		var aabb = mi.get_aabb()
-		var global_xform = mi.global_transform
-		var transformed_aabb = global_xform * aabb
-		max_y = max(max_y, transformed_aabb.end.y)
-	return max_y
-
 func _place_model():
+	# MODIFIED: Prevent placing if cursor is hidden (outside bounds)
+	if not cursor.visible:
+		return
+		
 	var grid_pos = Vector2(cursor.position.x, cursor.position.z)
+	if not _is_within_terrain_bounds(grid_pos):
+		return
+		
 	if is_painting and grid_pos == last_painted_grid_pos:
 		return
 
@@ -715,7 +703,7 @@ func _place_model():
 		return
 
 	if not grid_data.has(grid_pos):
-		grid_data[grid_pos] = []
+		grid_data[grid_pos] =[]
 	
 	var models_on_tile: Array = grid_data[grid_pos]
 	var y_offset = 0.0
@@ -726,7 +714,7 @@ func _place_model():
 			if not allow_same_asset_stacking and top_model.get_meta("model_path") == selected_model_path:
 				print("Placement blocked: Stacking of the same asset is disabled.")
 				return
-			y_offset = _get_node_top_y(top_model)
+			y_offset = GridUtils.get_node_top_y(top_model)
 
 	var scene = load(selected_model_path)
 	if scene:
@@ -737,86 +725,24 @@ func _place_model():
 		instance.set_meta("model_path", selected_model_path)
 		instance.set_meta("model_scale", selected_model_scale)
 		instance.set_meta("uses_grid_snap", true)
-		_configure_shadows_for_node(instance)
+		GridUtils.configure_shadows(instance)
 		placed_models_container.add_child(instance)
 		models_on_tile.append(instance)
 		last_painted_grid_pos = grid_pos
 		_mark_as_modified()
 
 func _save_scene(scene_name: String):
-	var level_data_array =[]
-	for grid_pos in grid_data:
-		var models_on_tile: Array = grid_data[grid_pos]
-		for node in models_on_tile:
-			if is_instance_valid(node):
-				level_data_array.append({
-					"path": node.get_meta("model_path"),
-					"pos_x": node.position.x, "pos_y": node.position.y, "pos_z": node.position.z,
-					"roty": node.rotation_degrees.y,
-					"scale": node.get_meta("model_scale", model_scale),
-					"uses_grid_snap": node.get_meta("uses_grid_snap", true),
-					"is_road": node.get_meta("is_road", false)
-				})
-	var sun_settings_data = {
-		"pos_x": sun_light.position.x, "pos_y": sun_light.position.y, "pos_z": sun_light.position.z,
-		"rot_x": sun_light.rotation_degrees.x, "rot_y": sun_light.rotation_degrees.y, "rot_z": sun_light.rotation_degrees.z,
-		"energy": sun_light.light_energy
-	}
-	var full_save_data = {"level_data": level_data_array, "sun_settings": sun_settings_data}
-	var save_path = save_load_manager.SAVE_DIR.path_join(scene_name + ".json")
-	var file = FileAccess.open(save_path, FileAccess.WRITE)
-	file.store_string(JSON.stringify(full_save_data, "\t"))
-	file.close()
-	
+	LevelSerializer.save_scene(scene_name, grid_data, sun_light, model_scale, save_load_manager.SAVE_DIR)
 	current_scene_name = scene_name
 	is_modified = false
 	_update_status_label()
 
 func _load_scene(scene_name: String):
-	var save_path = save_load_manager.SAVE_DIR.path_join(scene_name + ".json")
-	if not FileAccess.file_exists(save_path): 
-		printerr("Save file not found: ", save_path)
-		return
-	var file = FileAccess.open(save_path, FileAccess.READ)
-	var data = JSON.parse_string(file.get_as_text())
-	file.close()
-	for child in placed_models_container.get_children():
-		child.queue_free()
-	grid_data.clear()
-	if typeof(data) == TYPE_DICTIONARY and data.has("level_data"):
-		var level_data_to_load = data["level_data"]
-		if data.has("sun_settings"):
-			var sun_data = data["sun_settings"]
-			sun_light.position = Vector3(sun_data.get("pos_x", 0), sun_data.get("pos_y", 0), sun_data.get("pos_z", 0))
-			sun_light.rotation_degrees = Vector3(sun_data.get("rot_x", -50), sun_data.get("rot_y", -30), sun_data.get("rot_z", 0))
-			sun_light.light_energy = sun_data.get("energy", 0.1)
-		for item in level_data_to_load:
-			var scene = load(item["path"])
-			if scene:
-				var instance = scene.instantiate()
-				instance.position = Vector3(item["pos_x"], item["pos_y"], item["pos_z"])
-				var loaded_scale = item.get("scale", model_scale)
-				instance.scale = Vector3.ONE * loaded_scale
-				instance.rotation_degrees.y = item.get("roty", 0.0)
-				instance.set_meta("model_path", item["path"])
-				instance.set_meta("model_scale", loaded_scale)
-				instance.set_meta("uses_grid_snap", item.get("uses_grid_snap", true))
-				instance.set_meta("is_road", item.get("is_road", false))
-				_configure_shadows_for_node(instance)
-				placed_models_container.add_child(instance)
-				var grid_pos = _get_grid_pos_for_instance(instance)
-				if not grid_data.has(grid_pos):
-					grid_data[grid_pos] = []
-				grid_data[grid_pos].append(instance)
-	else:
-		printerr("Failed to load scene: Invalid save file format.")
-		return
-	for grid_pos in grid_data:
-		grid_data[grid_pos].sort_custom(func(a, b): return a.position.y < b.position.y)
-		
-	current_scene_name = scene_name
-	is_modified = false
-	_update_status_label()
-	_deselect_instance()
-	_deselect_model()
-	print("Loaded successfully!")
+	var success = LevelSerializer.load_scene(scene_name, grid_data, placed_models_container, sun_light, model_scale, tile_x, tile_z, save_load_manager.SAVE_DIR)
+	if success:
+		current_scene_name = scene_name
+		is_modified = false
+		_update_status_label()
+		_deselect_instance()
+		_deselect_model()
+		print("Loaded successfully!")

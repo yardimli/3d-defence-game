@@ -22,10 +22,10 @@ const ROAD_MODELS = {
 # Defines which directions each road type connects to in its default rotation (0 degrees).
 const ROAD_CONNECTIONS = {
 	"end": [Vector2.RIGHT],
-	"straight": [Vector2.LEFT, Vector2.RIGHT],
-	"corner": [Vector2.RIGHT, Vector2.DOWN],
-	"intersection": [Vector2.LEFT, Vector2.RIGHT, Vector2.DOWN],
-	"crossroad": [Vector2.LEFT, Vector2.RIGHT, Vector2.UP, Vector2.DOWN]
+	"straight":[Vector2.LEFT, Vector2.RIGHT],
+	"corner":[Vector2.RIGHT, Vector2.DOWN],
+	"intersection":[Vector2.LEFT, Vector2.RIGHT, Vector2.DOWN],
+	"crossroad":[Vector2.LEFT, Vector2.RIGHT, Vector2.UP, Vector2.DOWN]
 }
 
 # --- Public API ---
@@ -36,9 +36,11 @@ func initialize(editor, container, data):
 	placed_models_container = container
 	grid_data = data
 
-# MODIFIED: Main function to place a road at a specific grid position.
-# It now correctly handles creating a new road on an empty tile.
 func place_road(grid_pos: Vector2):
+	# MODIFIED: Prevent placing outside bounds
+	if not level_editor._is_within_terrain_bounds(grid_pos):
+		return
+		
 	# Prevent placing a road on top of an existing road piece.
 	if _is_road_at(grid_pos):
 		print("Road already exists at this position.")
@@ -52,7 +54,7 @@ func place_road(grid_pos: Vector2):
 	
 	# 3. Update all adjacent neighbors so they connect to the new piece.
 	var tile_size = Vector2(level_editor.tile_x, level_editor.tile_z)
-	for neighbor_offset in [Vector2(0, -tile_size.y), Vector2(0, tile_size.y), Vector2(-tile_size.x, 0), Vector2(tile_size.x, 0)]:
+	for neighbor_offset in[Vector2(0, -tile_size.y), Vector2(0, tile_size.y), Vector2(-tile_size.x, 0), Vector2(tile_size.x, 0)]:
 		var neighbor_pos = grid_pos + neighbor_offset
 		if _is_road_at(neighbor_pos):
 			_place_or_update_road_at(neighbor_pos)
@@ -64,19 +66,16 @@ func place_road(grid_pos: Vector2):
 func on_model_deleted(grid_pos: Vector2):
 	# Update all neighbors of the deleted piece.
 	var tile_size = Vector2(level_editor.tile_x, level_editor.tile_z)
-	for neighbor_offset in [Vector2(0, -tile_size.y), Vector2(0, tile_size.y), Vector2(-tile_size.x, 0), Vector2(tile_size.x, 0)]:
+	for neighbor_offset in[Vector2(0, -tile_size.y), Vector2(0, tile_size.y), Vector2(-tile_size.x, 0), Vector2(tile_size.x, 0)]:
 		var neighbor_pos = grid_pos + neighbor_offset
 		if _is_road_at(neighbor_pos):
 			_place_or_update_road_at(neighbor_pos)
 
-# NEW: Public helper to get the road node at a grid position, for use by the level editor.
 func get_road_node_at(grid_pos: Vector2) -> Node3D:
 	return _get_road_node_at(grid_pos)
 
 # --- Internal Logic ---
 
-# MODIFIED: Core function that determines the correct road piece and rotation.
-# Removed the initial check, as this function now assumes a road already exists at the location.
 func _place_or_update_road_at(grid_pos: Vector2):
 	var neighbors = _get_road_neighbors(grid_pos)
 	var connection_count = neighbors.size()
@@ -134,39 +133,34 @@ func _place_or_update_road_at(grid_pos: Vector2):
 		existing_road.rotation_degrees.y = rotation_y
 
 
-# MODIFIED: Creates and places a new road piece, calculating its Y position to stack on existing assets.
 func _create_road_piece(grid_pos: Vector2, type: String, rotation_y: float):
 	var model_path = ROAD_MODELS[type]
 	var scene = load(model_path)
 	if scene:
-		# NEW: Calculate y_offset based on the highest existing model on the tile.
 		var y_offset = 0.0
 		if grid_data.has(grid_pos):
 			var models_on_tile: Array = grid_data[grid_pos]
 			if not models_on_tile.is_empty():
-				# The list is sorted by y-pos, so the last one is the top one.
 				var top_model = models_on_tile.back()
 				if is_instance_valid(top_model):
-					y_offset = level_editor._get_node_top_y(top_model)
+					y_offset = GridUtils.get_node_top_y(top_model)
 
 		var instance = scene.instantiate()
-		# MODIFIED: Apply the calculated y_offset.
 		instance.position = Vector3(grid_pos.x, y_offset, grid_pos.y)
-		instance.scale = Vector3.ONE # Road pieces should have a uniform scale of 1.
+		instance.scale = Vector3.ONE 
 		instance.rotation_degrees.y = rotation_y
 		instance.set_meta("model_path", model_path)
 		instance.set_meta("model_scale", 1.0)
 		instance.set_meta("uses_grid_snap", true)
 		instance.set_meta("is_road", true) 
 		
-		level_editor._configure_shadows_for_node(instance)
+		GridUtils.configure_shadows(instance)
 		placed_models_container.add_child(instance)
 		
 		if not grid_data.has(grid_pos):
-			grid_data[grid_pos] = []
+			grid_data[grid_pos] =[]
 		grid_data[grid_pos].append(instance)
 
-# Deletes a road piece at a given grid position.
 func _delete_road_at(grid_pos: Vector2):
 	if grid_data.has(grid_pos):
 		var models_on_tile: Array = grid_data[grid_pos]
@@ -178,9 +172,8 @@ func _delete_road_at(grid_pos: Vector2):
 		if models_on_tile.is_empty():
 			grid_data.erase(grid_pos)
 
-# Checks which of the four cardinal neighbors of a grid cell also contain a road.
 func _get_road_neighbors(grid_pos: Vector2) -> Array[Vector2]:
-	var result: Array[Vector2] = []
+	var result: Array[Vector2] =[]
 	var tile_size = Vector2(level_editor.tile_x, level_editor.tile_z)
 	
 	if _is_road_at(grid_pos + Vector2(0, -tile_size.y)): result.append(Vector2.UP)
@@ -190,11 +183,9 @@ func _get_road_neighbors(grid_pos: Vector2) -> Array[Vector2]:
 		
 	return result
 
-# Helper to check if a road piece exists at a specific grid position.
 func _is_road_at(grid_pos: Vector2) -> bool:
 	return is_instance_valid(_get_road_node_at(grid_pos))
 
-# Helper to get the actual road node at a grid position.
 func _get_road_node_at(grid_pos: Vector2) -> Node3D:
 	if grid_data.has(grid_pos):
 		var models_on_tile: Array = grid_data[grid_pos]

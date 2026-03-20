@@ -4,8 +4,9 @@
 [ext_resource type="PackedScene" uid="uid://dmqudqdhbk7uj" path="res://asset_selector.tscn" id="2_4farl"]
 [ext_resource type="PackedScene" uid="uid://b5w5g2yvj1w5c" path="res://sun_settings.tscn" id="3_u007t"]
 [ext_resource type="PackedScene" uid="uid://dla24bj4lci1g" path="res://save_load_manager.tscn" id="4_v0uwa"]
-[ext_resource type="PackedScene" uid="uid://b1x2y3z4a5b6c" path="res://settings_dialog.tscn" id="5_abcde"]
-[ext_resource type="PackedScene" uid="uid://c1x2y3z4a5b6d" path="res://properties_panel.tscn" id="6_prop"]
+[ext_resource type="PackedScene" uid="uid://i13de173m1so" path="res://settings_dialog.tscn" id="5_abcde"]
+[ext_resource type="PackedScene" uid="uid://dsm1wfmpdfide" path="res://properties_panel.tscn" id="6_prop"]
+[ext_resource type="Script" uid="uid://bdlsssrwtssye" path="res://camera_controller.gd" id="7_cam"]
 
 [node name="LevelEditor" type="Node3D" unique_id=1779687681]
 script = ExtResource("1_miuv6")
@@ -15,6 +16,7 @@ unique_name_in_owner = true
 
 [node name="CameraPivot" type="Node3D" parent="." unique_id=1537654916]
 unique_name_in_owner = true
+script = ExtResource("7_cam")
 
 [node name="Camera3D" type="Camera3D" parent="CameraPivot" unique_id=1774509767]
 unique_name_in_owner = true
@@ -112,7 +114,6 @@ size_flags_horizontal = 3
 theme_override_font_sizes/font_size = 20
 text = " Settings "
 
-; MODIFIED: Added a new button for the road builder.
 [node name="ButtonRoadBuilder" type="Button" parent="UI/TopToolbar/MarginContainer/HBoxContainer" unique_id=505050505]
 unique_name_in_owner = true
 layout_mode = 2
@@ -126,7 +127,7 @@ unique_name_in_owner = true
 [node name="PropertiesPanel" parent="UI" unique_id=303030303 instance=ExtResource("6_prop")]
 unique_name_in_owner = true
 
-[node name="StatusPanel" type="PanelContainer" parent="UI" unique_id=4000000001]
+[node name="StatusPanel" type="PanelContainer" parent="UI" unique_id=-294967295]
 anchors_preset = 2
 anchor_top = 1.0
 anchor_bottom = 1.0
@@ -134,7 +135,7 @@ offset_top = -40.0
 offset_right = 250.0
 grow_vertical = 0
 
-[node name="StatusLabel" type="Label" parent="UI/StatusPanel" unique_id=4000000002]
+[node name="StatusLabel" type="Label" parent="UI/StatusPanel" unique_id=-294967294]
 unique_name_in_owner = true
 layout_mode = 2
 text = "Untitled"
