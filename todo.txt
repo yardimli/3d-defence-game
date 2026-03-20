@@ -5,6 +5,8 @@ make the game a sandbox game
 add delete with right click
 add button to start new blank scene on top, make filename to undefined so save will ask for filename
 
+draw two paralele tracks called A-track and B-track on top of the road tiles they should work with the corner, intersction etc tiles. in settings allow user to turn the A-track or B-track on or off
+
 allow user to add cars to roads, when a car is dragged on top of a road tile it should start moving on the road and when getting to an intersection it will randomly choose a direction and turn towards it and continue driving. when it reaches the end of the road it should u turn back. when another car is its way it should stop and not crash or overlap other car. if the cars cant pass each other they both should make an u-turn.
 add option to add turrets to cars. 
 turrets should fire bullets on enemies that spawn outside the city and move towards the city.

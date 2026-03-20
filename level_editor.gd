@@ -20,8 +20,14 @@ var original_drag_grid_pos := Vector2.INF
 var allow_same_asset_stacking := false
 var current_scene_name: String = ""
 var is_modified := false
-# NEW: State for road builder mode.
 var is_road_builder_enabled := false
+
+# NEW: Settings State
+var cloud_density := 0.5
+var cloud_speed := 0.02
+var terrain_width := 100
+var terrain_depth := 100
+var tree_density := 2.0 # percentage
 
 # --- Nodes ---
 @onready var placed_models_container: Node3D = %PlacedModelsContainer
@@ -44,7 +50,6 @@ var is_road_builder_enabled := false
 @onready var properties_panel: PanelContainer = %PropertiesPanel
 @onready var btn_cycle_selection: Button = %ButtonCycleSelection
 @onready var status_label: Label = %StatusLabel
-# NEW: Node reference for the road builder button.
 @onready var btn_road_builder: Button = %ButtonRoadBuilder
 
 # --- Materials ---
@@ -57,16 +62,29 @@ var cam_rot_x := -45.0
 var cam_rot_y := 45.0
 
 # --- Custom Modules ---
-# NEW: Instance of the road builder logic.
 var road_builder
+# NEW: Modules for Skybox and Terrain
+var skybox
+var terrain_generator
 
 func _ready():
 	_load_config()
 	_setup_materials()
 	
-	# NEW: Instantiate and initialize the road builder.
 	road_builder = load("res://road_builder.gd").new()
 	road_builder.initialize(self, placed_models_container, grid_data)
+	
+	# NEW: Instantiate Skybox
+	skybox = load("res://skybox.gd").new()
+	add_child(skybox)
+	skybox.set_cloud_density(cloud_density)
+	skybox.set_cloud_speed(cloud_speed)
+	
+	# NEW: Instantiate Terrain Generator
+	terrain_generator = load("res://terrain_generator.gd").new()
+	add_child(terrain_generator)
+	terrain_generator.set_settings(terrain_width, terrain_depth, tree_density / 100.0)
+	terrain_generator.initialize(tile_x, tile_z)
 	
 	_connect_ui_signals()
 	
@@ -103,6 +121,13 @@ func _load_config():
 		var sun_rot_x = float(config.get_value("Sun", "rotation_x", -50.0))
 		var sun_rot_y = float(config.get_value("Sun", "rotation_y", -30.0))
 		sun_light.rotation_degrees = Vector3(sun_rot_x, sun_rot_y, 0)
+		
+		# NEW: Load Skybox and Terrain settings
+		cloud_density = float(config.get_value("Skybox", "cloud_density", 0.5))
+		cloud_speed = float(config.get_value("Skybox", "cloud_speed", 0.02))
+		terrain_width = int(config.get_value("Terrain", "width", 100))
+		terrain_depth = int(config.get_value("Terrain", "depth", 100))
+		tree_density = float(config.get_value("Terrain", "tree_density", 2.0))
 
 	if not DirAccess.dir_exists_absolute(models_folder):
 		DirAccess.make_dir_absolute(models_folder)
@@ -146,12 +171,10 @@ func _connect_ui_signals():
 	save_load_manager.save_requested.connect(_save_scene)
 	save_load_manager.load_requested.connect(_load_scene)
 	
-	# NEW: Connect road builder signals.
 	btn_road_builder.pressed.connect(_on_road_builder_toggled)
 	road_builder.scene_modified.connect(_mark_as_modified)
 
 func _on_model_selected(data: Dictionary):
-	# NEW: Disable road builder if an asset is selected.
 	if is_road_builder_enabled:
 		_on_road_builder_toggled()
 		
@@ -214,7 +237,7 @@ func _select_instance(instance: Node3D):
 	_apply_selection_material(selected_instance)
 	
 	var grid_pos = _get_grid_pos_for_instance(selected_instance)
-	var models_on_tile = grid_data.get(grid_pos, [])
+	var models_on_tile = grid_data.get(grid_pos,[])
 	properties_panel.update_fields(selected_instance, models_on_tile, grid_pos)
 
 func _deselect_instance():
@@ -228,7 +251,6 @@ func _deselect_instance():
 # ==========================================
 func _rotate_placement():
 	if is_instance_valid(selected_instance):
-		# MODIFIED: Don't allow rotating road pieces manually.
 		if selected_instance.get_meta("is_road", false):
 			return
 		_mark_as_modified()
@@ -238,16 +260,14 @@ func _rotate_placement():
 	if is_instance_valid(ghost_instance):
 		ghost_instance.rotation_degrees.y = placement_rotation_y
 
-# MODIFIED: Now handles road piece deletion to trigger updates.
 func _delete_model_at_cursor():
 	var instance_to_delete = selected_instance
 	var grid_pos_to_update = Vector2.INF
-	# NEW: Flag to check if the deleted model was a road piece.
 	var was_road = false
 
 	if is_instance_valid(instance_to_delete):
 		grid_pos_to_update = _get_grid_pos_for_instance(instance_to_delete)
-		was_road = instance_to_delete.get_meta("is_road", false) # NEW
+		was_road = instance_to_delete.get_meta("is_road", false)
 		_deselect_instance()
 		if grid_data.has(grid_pos_to_update):
 			var models_on_tile: Array = grid_data[grid_pos_to_update]
@@ -263,7 +283,7 @@ func _delete_model_at_cursor():
 				var model_to_delete = models_on_tile.pop_back()
 				if is_instance_valid(model_to_delete):
 					grid_pos_to_update = grid_pos
-					was_road = model_to_delete.get_meta("is_road", false) # NEW
+					was_road = model_to_delete.get_meta("is_road", false)
 					model_to_delete.queue_free()
 				if models_on_tile.is_empty():
 					grid_data.erase(grid_pos)
@@ -271,11 +291,9 @@ func _delete_model_at_cursor():
 				grid_data.erase(grid_pos)
 	
 	if grid_pos_to_update != Vector2.INF:
-		# NEW: If a road was deleted, tell the road builder to update neighbors.
 		if was_road:
 			road_builder.on_model_deleted(grid_pos_to_update)
 		else:
-			# Original logic for non-road assets.
 			_recalculate_stack_y_positions(grid_pos_to_update)
 			
 	_mark_as_modified()
@@ -283,15 +301,13 @@ func _delete_model_at_cursor():
 # ==========================================
 # UI CALLBACKS
 # ==========================================
-# NEW: Handles toggling the road builder mode.
 func _on_road_builder_toggled():
 	is_road_builder_enabled = not is_road_builder_enabled
 	if is_road_builder_enabled:
-		# When enabling road builder, clear any active model selection.
 		_deselect_model()
-		btn_road_builder.modulate = Color(0.4, 1.0, 0.4) # Highlight color
+		btn_road_builder.modulate = Color(0.4, 1.0, 0.4)
 	else:
-		btn_road_builder.modulate = Color(1, 1, 1) # Default color
+		btn_road_builder.modulate = Color(1, 1, 1)
 
 func _on_sun_config_pressed():
 	var current_settings = {
@@ -306,19 +322,40 @@ func _on_sun_settings_updated(new_settings: Dictionary):
 	sun_light.rotation_degrees = new_settings.get("rotation_degrees", sun_light.rotation_degrees)
 	sun_light.light_energy = new_settings.get("energy", sun_light.light_energy)
 
+# MODIFIED: Include new settings when opening the dialog.
 func _on_settings_button_pressed():
 	var current_settings = {
-		"allow_same_asset_stacking": allow_same_asset_stacking
+		"allow_same_asset_stacking": allow_same_asset_stacking,
+		"cloud_density": cloud_density,
+		"cloud_speed": cloud_speed,
+		"terrain_width": terrain_width,
+		"terrain_depth": terrain_depth,
+		"tree_density": tree_density
 	}
 	var preview_settings = asset_selector.get_current_preview_settings()
 	current_settings.merge(preview_settings)
 	
 	settings_dialog.open_with_settings(current_settings)
 
+# MODIFIED: Handle new settings updates.
 func _on_setting_changed(setting_name: String, new_value: Variant):
 	if setting_name == "allow_same_asset_stacking":
 		allow_same_asset_stacking = new_value
-		print("Allow same asset stacking set to: ", allow_same_asset_stacking)
+	elif setting_name == "cloud_density":
+		cloud_density = new_value
+		if skybox: skybox.set_cloud_density(cloud_density)
+	elif setting_name == "cloud_speed":
+		cloud_speed = new_value
+		if skybox: skybox.set_cloud_speed(cloud_speed)
+	elif setting_name == "terrain_width":
+		terrain_width = new_value
+		if terrain_generator: terrain_generator.set_settings(terrain_width, terrain_depth, tree_density / 100.0)
+	elif setting_name == "terrain_depth":
+		terrain_depth = new_value
+		if terrain_generator: terrain_generator.set_settings(terrain_width, terrain_depth, tree_density / 100.0)
+	elif setting_name == "tree_density":
+		tree_density = new_value
+		if terrain_generator: terrain_generator.set_settings(terrain_width, terrain_depth, tree_density / 100.0)
 
 func _on_preview_settings_changed(settings: Dictionary):
 	asset_selector.apply_preview_overrides(settings)
@@ -368,7 +405,7 @@ func _on_properties_order_changed(direction: int):
 	if not is_instance_valid(selected_instance): return
 	
 	var grid_pos = _get_grid_pos_for_instance(selected_instance)
-	var models_on_tile: Array = grid_data.get(grid_pos, [])
+	var models_on_tile: Array = grid_data.get(grid_pos,[])
 	
 	if models_on_tile.size() > 1:
 		var current_index = models_on_tile.find(selected_instance)
@@ -397,13 +434,10 @@ func _on_grid_snap_toggled(should_snap: bool):
 # INPUT & CAMERA CONTROLS
 # ==========================================
 
-# MODIFIED: Replaced the old logic with a more robust right-click delete handler.
-# This function now correctly deletes assets under the cursor based on the active mode.
 func _handle_right_click_delete(mouse_pos: Vector2) -> bool:
 	_update_cursor(mouse_pos)
 	var grid_pos = Vector2(cursor.position.x, cursor.position.z)
 
-	# If there's nothing on the tile, we can't delete anything.
 	if not grid_data.has(grid_pos) or grid_data[grid_pos].is_empty():
 		return false
 
@@ -411,49 +445,47 @@ func _handle_right_click_delete(mouse_pos: Vector2) -> bool:
 	var instance_to_delete: Node3D = null
 	var was_road = false
 
-	if is_road_builder_enabled:
-		# In road mode, find and target the road piece specifically.
-		for model in models_on_tile:
-			if is_instance_valid(model) and model.get_meta("is_road", false):
-				instance_to_delete = model
-				was_road = true
-				break # Found the road, stop searching.
-	else:
-		# In normal mode, target the top-most item, but only if it's NOT a road.
+	var is_asset_selected = not selected_model_path.is_empty()
+
+	if is_asset_selected:
 		var top_model = models_on_tile.back()
-		if is_instance_valid(top_model) and not top_model.get_meta("is_road", false):
+		if is_instance_valid(top_model) and top_model.get_meta("model_path") == selected_model_path:
 			instance_to_delete = top_model
-			was_road = false
-
-	# If we found a valid target for deletion...
-	if is_instance_valid(instance_to_delete):
-		# If the deleted object was the currently selected one, deselect it first.
-		if selected_instance == instance_to_delete:
-			_deselect_instance()
-
-		# Remove from the grid data array.
-		models_on_tile.erase(instance_to_delete)
-		
-		# If the tile is now empty, remove the grid position key.
-		if models_on_tile.is_empty():
-			grid_data.erase(grid_pos)
-		
-		# Delete the node from the scene.
-		instance_to_delete.queue_free()
-		
-		# After deletion, update visuals and data.
-		if was_road:
-			# If a road was deleted, tell the road builder to update neighbors.
-			road_builder.on_model_deleted(grid_pos)
+			was_road = top_model.get_meta("is_road", false)
 		else:
-			# If a regular asset was deleted, just recalculate the stack heights.
-			_recalculate_stack_y_positions(grid_pos)
+			return false
 			
-		_mark_as_modified()
-		return true # Deletion was successful.
+	else:
+		if is_road_builder_enabled:
+			for model in models_on_tile:
+				if is_instance_valid(model) and model.get_meta("is_road", false):
+					instance_to_delete = model
+					was_road = true
+					break
+		else:
+			return false
 
-	# No valid target was found for deletion in the current mode.
-	return false
+	if not is_instance_valid(instance_to_delete):
+		return false
+
+	if selected_instance == instance_to_delete:
+		_deselect_instance()
+
+	models_on_tile.erase(instance_to_delete)
+	
+	if models_on_tile.is_empty():
+		grid_data.erase(grid_pos)
+	
+	instance_to_delete.queue_free()
+	
+	if was_road:
+		road_builder.on_model_deleted(grid_pos)
+	else:
+		_recalculate_stack_y_positions(grid_pos)
+		
+	_mark_as_modified()
+	return true
+
 
 func _unhandled_input(event):
 	var mouse_pos = get_viewport().get_mouse_position()
@@ -464,11 +496,9 @@ func _unhandled_input(event):
 		if event.keycode == KEY_C: _cycle_selection_on_tile()
 		if event.is_match(event): get_viewport().set_input_as_handled()
 	if event is InputEventMouseMotion:
-		# MODIFIED: Update cursor when road builder is active.
 		if selected_model_path != "" or is_dragging_instance or is_road_builder_enabled:
 			_update_cursor(mouse_pos)
 		if is_painting:
-			# MODIFIED: Check for road builder mode before placing.
 			if is_road_builder_enabled:
 				_place_model()
 			elif selected_model_path != "" and not Input.is_key_pressed(KEY_SHIFT):
@@ -499,10 +529,7 @@ func _unhandled_input(event):
 		(properties_panel.visible and properties_panel.get_global_rect().has_point(mouse_pos)):
 			return
 		
-		# MODIFIED: Handle right-click for specific deletion actions.
 		if event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
-			# If the delete handler succeeds, it means a "delete click" occurred,
-			# so we consume the event to prevent camera rotation from starting.
 			if _handle_right_click_delete(mouse_pos):
 				get_viewport().set_input_as_handled()
 				return
@@ -512,7 +539,6 @@ func _unhandled_input(event):
 		cam_zoom = clamp(cam_zoom, 2.0, 60.0)
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			if event.pressed:
-				# MODIFIED: Handle road builder placement.
 				if is_road_builder_enabled:
 					is_painting = true
 					last_painted_grid_pos = Vector2.INF
@@ -579,9 +605,8 @@ func _update_cursor(mouse_pos: Vector2):
 func _drag_selected_instance():
 	if not is_instance_valid(selected_instance): return
 	
-	# MODIFIED: Prevent dragging road pieces.
 	if selected_instance.get_meta("is_road", false):
-		is_dragging_instance = false # Cancel the drag
+		is_dragging_instance = false
 		return
 		
 	var mouse_pos = get_viewport().get_mouse_position()
@@ -613,7 +638,7 @@ func _update_grid_data_for_moved_instance(instance: Node3D, old_grid_pos: Vector
 			
 	var new_grid_pos = _get_grid_pos_for_instance(instance)
 	if not grid_data.has(new_grid_pos):
-		grid_data[new_grid_pos] = []
+		grid_data[new_grid_pos] =[]
 	var new_tile_models: Array = grid_data[new_grid_pos]
 	new_tile_models.append(instance)
 	new_tile_models.sort_custom(func(a, b): return a.position.y < b.position.y)
@@ -626,7 +651,7 @@ func _update_grid_data_for_moved_instance(instance: Node3D, old_grid_pos: Vector
 # ==========================================
 func _cycle_selection_on_tile():
 	var grid_pos = Vector2(cursor.position.x, cursor.position.z)
-	var models_on_tile: Array = grid_data.get(grid_pos, [])
+	var models_on_tile: Array = grid_data.get(grid_pos,[])
 	
 	if models_on_tile.is_empty():
 		_deselect_instance()
@@ -644,10 +669,8 @@ func _get_grid_pos_for_instance(instance: Node3D) -> Vector2:
 	var z = round(instance.position.z / tile_z) * tile_z
 	return Vector2(x, z)
 
-# MODIFIED: Simplified stacking logic. Roads no longer have a special case and will
-# participate in stacking just like any other asset.
 func _recalculate_stack_y_positions(grid_pos: Vector2):
-	var models_on_tile: Array = grid_data.get(grid_pos, [])
+	var models_on_tile: Array = grid_data.get(grid_pos,[])
 	if models_on_tile.is_empty(): return
 	
 	var y_offset = 0.0
@@ -670,7 +693,7 @@ func _get_all_meshes(node: Node, meshes: Array):
 		_get_all_meshes(child, meshes)
 
 func _get_node_top_y(node: Node3D) -> float:
-	var meshes = []
+	var meshes =[]
 	_get_all_meshes(node, meshes)
 	if meshes.is_empty(): return node.global_position.y
 	var max_y = -INF
@@ -681,19 +704,16 @@ func _get_node_top_y(node: Node3D) -> float:
 		max_y = max(max_y, transformed_aabb.end.y)
 	return max_y
 
-# MODIFIED: Now handles both regular placement and road building.
 func _place_model():
 	var grid_pos = Vector2(cursor.position.x, cursor.position.z)
 	if is_painting and grid_pos == last_painted_grid_pos:
 		return
 
-	# NEW: Delegate to road builder if it's active.
 	if is_road_builder_enabled:
 		road_builder.place_road(grid_pos)
 		last_painted_grid_pos = grid_pos
 		return
 
-	# --- Original placement logic ---
 	if not grid_data.has(grid_pos):
 		grid_data[grid_pos] = []
 	
@@ -723,9 +743,8 @@ func _place_model():
 		last_painted_grid_pos = grid_pos
 		_mark_as_modified()
 
-# MODIFIED: Saves the new "is_road" meta tag.
 func _save_scene(scene_name: String):
-	var level_data_array = []
+	var level_data_array =[]
 	for grid_pos in grid_data:
 		var models_on_tile: Array = grid_data[grid_pos]
 		for node in models_on_tile:
@@ -736,7 +755,6 @@ func _save_scene(scene_name: String):
 					"roty": node.rotation_degrees.y,
 					"scale": node.get_meta("model_scale", model_scale),
 					"uses_grid_snap": node.get_meta("uses_grid_snap", true),
-					# NEW: Save the road identifier.
 					"is_road": node.get_meta("is_road", false)
 				})
 	var sun_settings_data = {
@@ -754,7 +772,6 @@ func _save_scene(scene_name: String):
 	is_modified = false
 	_update_status_label()
 
-# MODIFIED: Loads the new "is_road" meta tag.
 func _load_scene(scene_name: String):
 	var save_path = save_load_manager.SAVE_DIR.path_join(scene_name + ".json")
 	if not FileAccess.file_exists(save_path): 
@@ -784,7 +801,6 @@ func _load_scene(scene_name: String):
 				instance.set_meta("model_path", item["path"])
 				instance.set_meta("model_scale", loaded_scale)
 				instance.set_meta("uses_grid_snap", item.get("uses_grid_snap", true))
-				# NEW: Load the road identifier.
 				instance.set_meta("is_road", item.get("is_road", false))
 				_configure_shadows_for_node(instance)
 				placed_models_container.add_child(instance)
