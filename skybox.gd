@@ -14,6 +14,20 @@ func _ready():
 	var env = Environment.new()
 	env.background_mode = Environment.BG_SKY
 	
+	# Enable fog to blend the terrain edge smoothly into the skybox horizon
+	env.fog_enabled = true
+	env.fog_mode = Environment.FOG_MODE_EXPONENTIAL
+	env.fog_density = 0.0025
+	env.fog_light_color = Color(0.65, 0.75, 0.85) # Matches sky_horizon_color
+	# Prevent the fog from applying to the skybox so the clouds remain visible
+	env.fog_sky_affect = 0.0 
+	
+	# MODIFIED: Decouple ambient lighting from the skybox visuals.
+	# This prevents the map from getting brighter when cloud density increases.
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	env.ambient_light_color = Color(0.55, 0.65, 0.75) # A steady, soft sky-blue ambient light
+	env.ambient_light_energy = 1.0
+	
 	var sky = Sky.new()
 	sky_material = ShaderMaterial.new()
 	
@@ -52,8 +66,9 @@ func _ready():
 			
 			COLOR = mix(sky_color, cloud_color, coverage);
 		} else {
-			// Ground reflection/color
-			COLOR = vec3(0.2, 0.2, 0.2);
+			// Blend the ground color into the horizon color to prevent a harsh gap
+			// if the camera angle manages to see past the edge of the terrain mesh.
+			COLOR = mix(sky_horizon_color, vec3(0.2, 0.2, 0.2), clamp(-dir.y * 5.0, 0.0, 1.0));
 		}
 	}
 	"""
