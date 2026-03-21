@@ -131,7 +131,7 @@ func generate_terrain():
 					var random_rot = tile_rotations[x * terrain_depth + z]
 					var transform = Transform3D()
 					transform = transform.rotated(Vector3.UP, random_rot)
-					transform.origin = Vector3(pos_x, -0.05, pos_z)
+					transform.origin = Vector3(pos_x, -0.07, pos_z)
 					
 					st.append_from(base_mesh, surf_idx, transform * local_xform)
 					

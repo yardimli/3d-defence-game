@@ -60,6 +60,7 @@ var selection_material: StandardMaterial3D
 var road_builder
 var skybox
 var terrain_generator
+var track_generator
 
 func _ready():
 	_load_config()
@@ -67,6 +68,10 @@ func _ready():
 	
 	road_builder = load("res://road_builder.gd").new()
 	road_builder.initialize(self, placed_models_container, grid_data)
+	
+	track_generator = load("res://track_generator.gd").new()
+	add_child(track_generator)
+	track_generator.initialize(self)
 	
 	skybox = load("res://skybox.gd").new()
 	add_child(skybox)
@@ -745,4 +750,8 @@ func _load_scene(scene_name: String):
 		_update_status_label()
 		_deselect_instance()
 		_deselect_model()
+		
+		if track_generator:
+			track_generator.generate_tracks()
+			
 		print("Loaded successfully!")

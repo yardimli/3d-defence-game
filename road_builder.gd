@@ -70,6 +70,8 @@ func on_model_deleted(grid_pos: Vector2):
 		var neighbor_pos = grid_pos + neighbor_offset
 		if _is_road_at(neighbor_pos):
 			_place_or_update_road_at(neighbor_pos)
+			
+	emit_signal("scene_modified")
 
 func get_road_node_at(grid_pos: Vector2) -> Node3D:
 	return _get_road_node_at(grid_pos)
