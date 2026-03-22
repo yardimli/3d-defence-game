@@ -1,16 +1,16 @@
 extends Node3D
 
 # --- Config ---
-@export var lane_offset: float = 0.4
+@export var lane_offset: float = 0.2
 @export var turn_radius: float = 1.0 # Modifier for the curve radius
-@export var track_color: Color = Color(0.1, 0.1, 0.1) # Dark grey/black
-@export var track_width: float = 0.1
+@export var track_color: Color = Color(0.6, 0.6, 0.6) # Dark grey/black
+@export var track_width: float = 0.05
 
-# NEW: Car placeholder settings
-@export var tiles_per_sphere: int = 5
-@export var sphere_size: float = 0.4
-@export var sphere_color: Color = Color(1.0, 0.2, 0.2) # Red
-@export var sphere_speed: float = 3.0
+# MODIFIED: Vehicle (box) settings replacing the old sphere settings
+@export var tiles_per_vehicle: int = 10
+@export var vehicle_size: Vector3 = Vector3(0.3, 0.35, 0.6) # width (x), height (y), length (z)
+@export var vehicle_color: Color = Color(1.0, 0.2, 0.2) # Red
+@export var vehicle_speed: float = 2.0
 
 # --- Dependencies ---
 var level_editor: Node3D
@@ -20,19 +20,21 @@ var tile_z: float = 2.0
 
 var paths_container: Node3D
 
-# NEW: State for moving spheres
-var active_path_followers: Array[PathFollow3D] =[]
+# MODIFIED: State for moving vehicles using a graph-based approach
+var active_vehicles: Array[Dictionary] =[]
 
 # Local segment definitions (at 0 degrees rotation)
 var local_segments = {}
 
+# MODIFIED: TrackSegment now holds its own curve and a list of connected next segments
 class TrackSegment extends RefCounted:
 	var start_pos: Vector3
 	var start_dir: Vector3
 	var end_pos: Vector3
 	var end_dir: Vector3
 	var type: String
-	var used: bool = false
+	var curve: Curve3D
+	var next_segments: Array[TrackSegment] =[]
 
 func initialize(editor: Node3D):
 	level_editor = editor
@@ -50,11 +52,38 @@ func initialize(editor: Node3D):
 		
 	generate_tracks()
 
-# NEW: Process function to move the spheres along the tracks
+# MODIFIED: Process function to move the vehicles and handle dynamic intersections
 func _process(delta: float):
-	for follower in active_path_followers:
-		if is_instance_valid(follower):
-			follower.progress += sphere_speed * delta
+	for vehicle in active_vehicles:
+		var seg: TrackSegment = vehicle["segment"]
+		if not seg or not seg.curve: continue
+		
+		vehicle["progress"] += vehicle_speed * delta
+		var curve_len = seg.curve.get_baked_length()
+		
+		# Handle reaching the end of the current segment
+		while vehicle["progress"] > curve_len:
+			if curve_len <= 0.001:
+				break
+				
+			if seg.next_segments.size() > 0:
+				# Subtract current length and pick a random connected segment (intersection logic)
+				vehicle["progress"] -= curve_len
+				seg = seg.next_segments.pick_random()
+				vehicle["segment"] = seg
+				curve_len = seg.curve.get_baked_length()
+			else:
+				# Dead end reached
+				vehicle["progress"] = curve_len
+				break
+		
+		# Update position and rotation along the curve
+		# sample_baked_with_rotation returns a Transform3D facing the direction of travel (-Z forward)
+		var transform = seg.curve.sample_baked_with_rotation(vehicle["progress"], false, false)
+		
+		# Offset Y to sit on top of the track
+		transform.origin.y += (vehicle_size.y / 2.0) + 0.05
+		vehicle["node"].global_transform = transform
 
 func _init_local_segments():
 	var d = lane_offset
@@ -88,7 +117,6 @@ func _init_local_segments():
 			{"start": P_RIGHT_IN, "start_dir": D_RIGHT_IN, "end": P_LEFT_OUT, "end_dir": D_LEFT_OUT, "type": "straight"}
 		],
 		"corner":[
-			# MODIFIED: Corrected the corner to connect DOWN and LEFT at 0 degrees rotation
 			{"start": P_DOWN_IN, "start_dir": D_DOWN_IN, "end": P_LEFT_OUT, "end_dir": D_LEFT_OUT, "type": "curve"},
 			{"start": P_LEFT_IN, "start_dir": D_LEFT_IN, "end": P_DOWN_OUT, "end_dir": D_DOWN_OUT, "type": "curve"}
 		],
@@ -128,14 +156,13 @@ func _get_road_type(model_path: String) -> String:
 	if "road-crossroad" in model_path: return "crossroad"
 	return ""
 
+# MODIFIED: Generates the track graph instead of fixed loops
 func generate_tracks():
-	# NEW: Clear old followers before regenerating
-	active_path_followers.clear()
-	
+	active_vehicles.clear()
 	for child in paths_container.get_children():
 		child.queue_free()
 		
-	var all_segments =[]
+	var all_segments: Array[TrackSegment] =[]
 	
 	# 1. Collect all segments from road tiles in global space
 	for grid_pos in grid_data:
@@ -157,95 +184,75 @@ func generate_tracks():
 						g_seg.type = l_seg["type"]
 						all_segments.append(g_seg)
 						
-	# 2. Stitch segments into continuous loops
-	var loops =[]
+	# 2. Build curves and connect segments into a graph
 	for seg in all_segments:
-		if seg.used: continue
+		seg.curve = _build_curve_for_segment(seg)
 		
-		var curve = Curve3D.new()
-		var current_seg = seg
-		
-		_add_segment_to_curve(curve, current_seg, true)
-		current_seg.used = true
-		
-		while true:
-			var next_seg = _find_next_segment(current_seg.end_pos, all_segments, seg)
-			if next_seg == null or next_seg.used:
-				break
+	for seg in all_segments:
+		for other_seg in all_segments:
+			if seg != other_seg and seg.end_pos.distance_to(other_seg.start_pos) < 0.05:
+				seg.next_segments.append(other_seg)
 				
-			_add_segment_to_curve(curve, next_seg, false)
-			next_seg.used = true
-			current_seg = next_seg
-			
-		loops.append(curve)
+	# 3. Draw the visual track mesh efficiently using a single SurfaceTool
+	var st = SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var mat = StandardMaterial3D.new()
+	mat.albedo_color = track_color
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	st.set_material(mat)
+	
+	for seg in all_segments:
+		_add_curve_to_surfacetool(st, seg.curve)
 		
-	# 3. Draw the loops
-	for curve in loops:
-		# Add Path3D so cars can follow it later
-		var path = Path3D.new()
-		path.curve = curve
-		paths_container.add_child(path)
-		
-		# Generate the visual mesh
-		_create_mesh_for_curve(curve)
-		
-		# NEW: Spawn placeholder spheres on the generated path
-		_spawn_spheres_on_path(path)
+	var mesh = st.commit()
+	var mi = MeshInstance3D.new()
+	mi.mesh = mesh
+	paths_container.add_child(mi)
+	
+	# 4. Spawn vehicles on the graph
+	_spawn_vehicles(all_segments)
 
-# NEW: Helper function to spawn spheres along a path
-func _spawn_spheres_on_path(path: Path3D):
-	var curve_length = path.curve.get_baked_length()
-	# Estimate number of tiles this curve covers (roughly curve_length / tile_x)
-	var estimated_tiles = curve_length / tile_x
-	var num_spheres = int(estimated_tiles / tiles_per_sphere)
+# NEW: Spawns vehicles onto random segments in the graph
+func _spawn_vehicles(segments: Array[TrackSegment]):
+	if segments.is_empty(): return
 	
-	# Ensure at least one sphere if the track is long enough
-	if num_spheres < 1 and curve_length > (tile_x * 2.0):
-		num_spheres = 1
+	var total_length = 0.0
+	for seg in segments:
+		total_length += seg.curve.get_baked_length()
 		
-	if num_spheres <= 0:
-		return
-		
-	var spacing = curve_length / num_spheres
+	var estimated_tiles = total_length / tile_x
+	var num_vehicles = int(estimated_tiles / tiles_per_vehicle)
 	
-	for i in range(num_spheres):
-		var follower = PathFollow3D.new()
-		follower.loop = true
-		follower.progress = i * spacing
-		path.add_child(follower)
+	if num_vehicles < 1 and total_length > (tile_x * 2.0):
+		num_vehicles = 1
+		
+	for i in range(num_vehicles):
+		var seg = segments.pick_random()
+		var progress = randf() * seg.curve.get_baked_length()
 		
 		var mesh_instance = MeshInstance3D.new()
-		var sphere_mesh = SphereMesh.new()
-		sphere_mesh.radius = sphere_size / 2.0
-		sphere_mesh.height = sphere_size
-		mesh_instance.mesh = sphere_mesh
+		var box_mesh = BoxMesh.new()
+		box_mesh.size = vehicle_size
+		mesh_instance.mesh = box_mesh
 		
 		var mat = StandardMaterial3D.new()
-		mat.albedo_color = sphere_color
+		mat.albedo_color = vehicle_color
 		mesh_instance.material_override = mat
 		
-		# Offset slightly up so it sits on the track without clipping
-		mesh_instance.position.y = (sphere_size / 2.0) + 0.05
+		paths_container.add_child(mesh_instance)
 		
-		follower.add_child(mesh_instance)
-		active_path_followers.append(follower)
+		active_vehicles.append({
+			"node": mesh_instance,
+			"segment": seg,
+			"progress": progress
+		})
 
-func _find_next_segment(pos: Vector3, segments: Array, first_seg: TrackSegment) -> TrackSegment:
-	# First try to close the loop seamlessly
-	if first_seg != null and first_seg.start_pos.distance_to(pos) < 0.05:
-		return first_seg
-	# Then look for unused segments
-	for seg in segments:
-		if not seg.used and seg.start_pos.distance_to(pos) < 0.05:
-			return seg
-	return null
-
-func _add_segment_to_curve(curve: Curve3D, seg: TrackSegment, is_first: bool):
+# NEW: Builds a standalone Curve3D for a single segment
+func _build_curve_for_segment(seg: TrackSegment) -> Curve3D:
+	var curve = Curve3D.new()
+	
 	if seg.type == "straight":
-		if is_first:
-			curve.add_point(seg.start_pos)
-		else:
-			curve.set_point_out(curve.get_point_count() - 1, Vector3.ZERO)
+		curve.add_point(seg.start_pos)
 		curve.add_point(seg.end_pos)
 		
 	elif seg.type == "curve":
@@ -261,11 +268,7 @@ func _add_segment_to_curve(curve: Curve3D, seg: TrackSegment, is_first: bool):
 		var out_cp = seg.start_dir * cp_dist
 		var in_cp = -seg.end_dir * cp_dist
 		
-		if is_first:
-			curve.add_point(seg.start_pos, Vector3.ZERO, out_cp)
-		else:
-			curve.set_point_out(curve.get_point_count() - 1, out_cp)
-			
+		curve.add_point(seg.start_pos, Vector3.ZERO, out_cp)
 		curve.add_point(seg.end_pos, in_cp, Vector3.ZERO)
 		
 	elif seg.type == "perpendicular":
@@ -274,25 +277,17 @@ func _add_segment_to_curve(curve: Curve3D, seg: TrackSegment, is_first: bool):
 		var p2 = p1 + seg.start_dir * (tile_x / 2.0)
 		var p3 = p4 - seg.end_dir * (tile_x / 2.0)
 		
-		if is_first:
-			curve.add_point(p1)
-		else:
-			curve.set_point_out(curve.get_point_count() - 1, Vector3.ZERO)
-			
+		curve.add_point(p1)
 		curve.add_point(p2)
 		curve.add_point(p3)
 		curve.add_point(p4)
+		
+	return curve
 
-func _create_mesh_for_curve(curve: Curve3D):
+# MODIFIED: Appends a curve's visual geometry to a shared SurfaceTool
+func _add_curve_to_surfacetool(st: SurfaceTool, curve: Curve3D):
 	var points = curve.tessellate(5, 0.1)
 	if points.size() < 2: return
-	
-	var st = SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var mat = StandardMaterial3D.new()
-	mat.albedo_color = track_color
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	st.set_material(mat)
 	
 	var up = Vector3.UP
 	for i in range(points.size() - 1):
@@ -321,8 +316,3 @@ func _create_mesh_for_curve(curve: Curve3D):
 		st.add_vertex(v4)
 		st.set_normal(up)
 		st.add_vertex(v3)
-		
-	var mesh = st.commit()
-	var mi = MeshInstance3D.new()
-	mi.mesh = mesh
-	paths_container.add_child(mi)
