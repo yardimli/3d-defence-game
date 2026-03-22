@@ -122,6 +122,13 @@ size_flags_horizontal = 3
 theme_override_font_sizes/font_size = 20
 text = " Roads "
 
+[node name="ButtonSpawnCar" type="Button" parent="UI/TopToolbar/MarginContainer/HBoxContainer" unique_id=606060606]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 20
+text = " Spawn Car "
+
 [node name="AssetSelector" parent="UI" unique_id=1938719706 instance=ExtResource("2_4farl")]
 unique_name_in_owner = true
 

@@ -51,6 +51,7 @@ var tree_density := 2.0 # percentage
 @onready var btn_cycle_selection: Button = %ButtonCycleSelection
 @onready var status_label: Label = %StatusLabel
 @onready var btn_road_builder: Button = %ButtonRoadBuilder
+@onready var btn_spawn_car: Button = %ButtonSpawnCar # NEW: Reference to the Spawn Car button
 
 # --- Materials ---
 var ghost_material: StandardMaterial3D
@@ -61,6 +62,7 @@ var road_builder
 var skybox
 var terrain_generator
 var track_generator
+var track_cars # NEW: Reference to the track cars module
 
 func _ready():
 	_load_config()
@@ -73,6 +75,11 @@ func _ready():
 	add_child(track_generator)
 	track_generator.initialize(self)
 	
+	# NEW: Initialize track cars module
+	track_cars = load("res://track_cars.gd").new()
+	add_child(track_cars)
+	track_cars.initialize(self, track_generator, camera)
+	
 	skybox = load("res://skybox.gd").new()
 	add_child(skybox)
 	skybox.set_cloud_density(cloud_density)
@@ -81,7 +88,6 @@ func _ready():
 	terrain_generator = load("res://terrain_generator.gd").new()
 	add_child(terrain_generator)
 	terrain_generator.set_settings(terrain_width, terrain_depth, tree_density / 100.0)
-	# MODIFIED: Pass self to allow terrain generator to place trees as normal assets
 	terrain_generator.initialize(tile_x, tile_z, self)
 	
 	_connect_ui_signals()
@@ -170,6 +176,9 @@ func _connect_ui_signals():
 	
 	btn_road_builder.pressed.connect(_on_road_builder_toggled)
 	road_builder.scene_modified.connect(_mark_as_modified)
+	
+	# NEW: Connect the Spawn Car button to the track_cars module
+	btn_spawn_car.pressed.connect(track_cars.spawn_car)
 
 func _on_model_selected(data: Dictionary):
 	if is_road_builder_enabled:
@@ -245,7 +254,6 @@ func _deselect_instance():
 # ==========================================
 # BOUNDS CHECKING
 # ==========================================
-# NEW: Check if a position is within the generated terrain bounds
 func _is_within_terrain_bounds(pos: Vector2) -> bool:
 	var min_x = - (terrain_width / 2.0) * tile_x
 	var max_x = (terrain_width / 2.0 - 1) * tile_x
@@ -254,7 +262,6 @@ func _is_within_terrain_bounds(pos: Vector2) -> bool:
 	
 	return pos.x >= min_x - 0.01 and pos.x <= max_x + 0.01 and pos.y >= min_z - 0.01 and pos.y <= max_z + 0.01
 
-# NEW: Helper to get grid pos from mouse
 func _get_grid_pos_from_mouse(mouse_pos: Vector2) -> Vector2:
 	var origin = camera.project_ray_origin(mouse_pos)
 	var dir = camera.project_ray_normal(mouse_pos)
@@ -402,7 +409,6 @@ func _update_status_label():
 func _on_properties_position_changed(new_pos: Vector3):
 	if not is_instance_valid(selected_instance): return
 	
-	# MODIFIED: Prevent moving outside bounds via properties panel
 	var new_grid_pos = GridUtils.get_grid_pos(new_pos, tile_x, tile_z)
 	if not _is_within_terrain_bounds(new_grid_pos):
 		var old_grid_pos = GridUtils.get_grid_pos(selected_instance.position, tile_x, tile_z)
@@ -461,7 +467,6 @@ func _on_grid_snap_toggled(should_snap: bool):
 func _handle_right_click_delete(mouse_pos: Vector2) -> bool:
 	var grid_pos = _get_grid_pos_from_mouse(mouse_pos)
 	
-	# MODIFIED: Prevent deleting if outside bounds
 	if grid_pos == Vector2.INF or not _is_within_terrain_bounds(grid_pos):
 		return false
 		
@@ -556,7 +561,6 @@ func _unhandled_input(event):
 
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			if event.pressed:
-				# MODIFIED: Prevent actions if clicked outside terrain bounds
 				var click_grid_pos = _get_grid_pos_from_mouse(mouse_pos)
 				if click_grid_pos == Vector2.INF or not _is_within_terrain_bounds(click_grid_pos):
 					_deselect_instance()
@@ -588,7 +592,6 @@ func _unhandled_input(event):
 				is_dragging_instance = false
 
 func _update_cursor(mouse_pos: Vector2):
-	# MODIFIED: Hide cursor and prevent interaction if outside bounds
 	var grid_pos = _get_grid_pos_from_mouse(mouse_pos)
 	if grid_pos == Vector2.INF or not _is_within_terrain_bounds(grid_pos):
 		cursor.visible = false
@@ -641,12 +644,10 @@ func _drag_selected_instance():
 	if selected_instance.get_meta("uses_grid_snap", true):
 		var sn_x = round(intersection.x / tile_x) * tile_x
 		var sn_z = round(intersection.z / tile_z) * tile_z
-		# MODIFIED: Restrict dragging to bounds
 		if _is_within_terrain_bounds(Vector2(sn_x, sn_z)):
 			selected_instance.position.x = sn_x
 			selected_instance.position.z = sn_z
 	else:
-		# MODIFIED: Restrict dragging to bounds
 		if _is_within_terrain_bounds(Vector2(intersection.x, intersection.z)):
 			selected_instance.position.x = intersection.x
 			selected_instance.position.z = intersection.z
@@ -691,7 +692,6 @@ func _cycle_selection_on_tile():
 	_select_instance(models_on_tile[next_index])
 
 func _place_model():
-	# MODIFIED: Prevent placing if cursor is hidden (outside bounds)
 	if not cursor.visible:
 		return
 		

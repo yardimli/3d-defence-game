@@ -1,16 +1,14 @@
 extends Node3D
 
+# --- Signals ---
+# NEW: Emitted when the track is rebuilt so cars can snap to new segments
+signal track_regenerated
+
 # --- Config ---
 @export var lane_offset: float = 0.2
 @export var turn_radius: float = 1.0 # Modifier for the curve radius
 @export var track_color: Color = Color(0.6, 0.6, 0.6) # Dark grey/black
 @export var track_width: float = 0.05
-
-# MODIFIED: Vehicle (box) settings replacing the old sphere settings
-@export var tiles_per_vehicle: int = 10
-@export var vehicle_size: Vector3 = Vector3(0.3, 0.35, 0.6) # width (x), height (y), length (z)
-@export var vehicle_color: Color = Color(1.0, 0.2, 0.2) # Red
-@export var vehicle_speed: float = 2.0
 
 # --- Dependencies ---
 var level_editor: Node3D
@@ -20,8 +18,8 @@ var tile_z: float = 2.0
 
 var paths_container: Node3D
 
-# MODIFIED: State for moving vehicles using a graph-based approach
-var active_vehicles: Array[Dictionary] =[]
+# NEW: Store all segments to allow cars to find opposite lanes for U-turns
+var track_segments: Array[TrackSegment] =[]
 
 # Local segment definitions (at 0 degrees rotation)
 var local_segments = {}
@@ -52,38 +50,7 @@ func initialize(editor: Node3D):
 		
 	generate_tracks()
 
-# MODIFIED: Process function to move the vehicles and handle dynamic intersections
-func _process(delta: float):
-	for vehicle in active_vehicles:
-		var seg: TrackSegment = vehicle["segment"]
-		if not seg or not seg.curve: continue
-		
-		vehicle["progress"] += vehicle_speed * delta
-		var curve_len = seg.curve.get_baked_length()
-		
-		# Handle reaching the end of the current segment
-		while vehicle["progress"] > curve_len:
-			if curve_len <= 0.001:
-				break
-				
-			if seg.next_segments.size() > 0:
-				# Subtract current length and pick a random connected segment (intersection logic)
-				vehicle["progress"] -= curve_len
-				seg = seg.next_segments.pick_random()
-				vehicle["segment"] = seg
-				curve_len = seg.curve.get_baked_length()
-			else:
-				# Dead end reached
-				vehicle["progress"] = curve_len
-				break
-		
-		# Update position and rotation along the curve
-		# sample_baked_with_rotation returns a Transform3D facing the direction of travel (-Z forward)
-		var transform = seg.curve.sample_baked_with_rotation(vehicle["progress"], false, false)
-		
-		# Offset Y to sit on top of the track
-		transform.origin.y += (vehicle_size.y / 2.0) + 0.05
-		vehicle["node"].global_transform = transform
+# MODIFIED: Removed _process, _animate_wheels, _start_uturn, _create_sedan_mesh, _spawn_vehicles (Moved to track_cars.gd)
 
 func _init_local_segments():
 	var d = lane_offset
@@ -156,9 +123,9 @@ func _get_road_type(model_path: String) -> String:
 	if "road-crossroad" in model_path: return "crossroad"
 	return ""
 
-# MODIFIED: Generates the track graph instead of fixed loops
+# MODIFIED: Generates the track graph and stores all segments globally
 func generate_tracks():
-	active_vehicles.clear()
+	track_segments.clear()
 	for child in paths_container.get_children():
 		child.queue_free()
 		
@@ -193,6 +160,8 @@ func generate_tracks():
 			if seg != other_seg and seg.end_pos.distance_to(other_seg.start_pos) < 0.05:
 				seg.next_segments.append(other_seg)
 				
+	track_segments = all_segments
+	
 	# 3. Draw the visual track mesh efficiently using a single SurfaceTool
 	var st = SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
@@ -209,43 +178,8 @@ func generate_tracks():
 	mi.mesh = mesh
 	paths_container.add_child(mi)
 	
-	# 4. Spawn vehicles on the graph
-	_spawn_vehicles(all_segments)
-
-# NEW: Spawns vehicles onto random segments in the graph
-func _spawn_vehicles(segments: Array[TrackSegment]):
-	if segments.is_empty(): return
-	
-	var total_length = 0.0
-	for seg in segments:
-		total_length += seg.curve.get_baked_length()
-		
-	var estimated_tiles = total_length / tile_x
-	var num_vehicles = int(estimated_tiles / tiles_per_vehicle)
-	
-	if num_vehicles < 1 and total_length > (tile_x * 2.0):
-		num_vehicles = 1
-		
-	for i in range(num_vehicles):
-		var seg = segments.pick_random()
-		var progress = randf() * seg.curve.get_baked_length()
-		
-		var mesh_instance = MeshInstance3D.new()
-		var box_mesh = BoxMesh.new()
-		box_mesh.size = vehicle_size
-		mesh_instance.mesh = box_mesh
-		
-		var mat = StandardMaterial3D.new()
-		mat.albedo_color = vehicle_color
-		mesh_instance.material_override = mat
-		
-		paths_container.add_child(mesh_instance)
-		
-		active_vehicles.append({
-			"node": mesh_instance,
-			"segment": seg,
-			"progress": progress
-		})
+	# NEW: Emit signal to notify track_cars.gd to snap vehicles to new track
+	emit_signal("track_regenerated")
 
 # NEW: Builds a standalone Curve3D for a single segment
 func _build_curve_for_segment(seg: TrackSegment) -> Curve3D:
