@@ -8,7 +8,7 @@ signal track_regenerated
 @export var lane_offset: float = 0.2
 @export var turn_radius: float = 1.0 # Modifier for the curve radius
 @export var track_color: Color = Color(0.6, 0.6, 0.6) # Dark grey/black
-@export var track_width: float = 0.05
+@export var track_width: float = 0.01
 
 # --- Dependencies ---
 var level_editor: Node3D
@@ -24,7 +24,7 @@ var track_segments: Array[TrackSegment] =[]
 # Local segment definitions (at 0 degrees rotation)
 var local_segments = {}
 
-# MODIFIED: TrackSegment now holds its own curve and a list of connected next segments
+# MODIFIED: TrackSegment now holds its own curve, a list of connected next segments, and intersection data
 class TrackSegment extends RefCounted:
 	var start_pos: Vector3
 	var start_dir: Vector3
@@ -33,6 +33,8 @@ class TrackSegment extends RefCounted:
 	var type: String
 	var curve: Curve3D
 	var next_segments: Array[TrackSegment] =[]
+	var is_intersection: bool = false # NEW: Flags if this segment is part of an intersection to allow cars to yield
+	var grid_pos: Vector2 # NEW: The grid coordinate of this segment to identify which intersection it belongs to
 
 func initialize(editor: Node3D):
 	level_editor = editor
@@ -49,8 +51,6 @@ func initialize(editor: Node3D):
 		level_editor.road_builder.scene_modified.connect(generate_tracks)
 		
 	generate_tracks()
-
-# MODIFIED: Removed _process, _animate_wheels, _start_uturn, _create_sedan_mesh, _spawn_vehicles (Moved to track_cars.gd)
 
 func _init_local_segments():
 	var d = lane_offset
@@ -149,6 +149,11 @@ func generate_tracks():
 						g_seg.end_pos = xform * l_seg["end"]
 						g_seg.end_dir = (xform.basis * l_seg["end_dir"]).normalized()
 						g_seg.type = l_seg["type"]
+						
+						# NEW: Set intersection metadata for traffic yielding
+						g_seg.is_intersection = (r_type == "intersection" or r_type == "crossroad")
+						g_seg.grid_pos = grid_pos
+						
 						all_segments.append(g_seg)
 						
 	# 2. Build curves and connect segments into a graph

@@ -38,7 +38,7 @@ func spawn_car():
 	var sedan_data = _create_sedan_mesh()
 	add_child(sedan_data["root"])
 	
-	active_vehicles.append({
+	var car_data = {
 		"node": sedan_data["root"],
 		"wheels": sedan_data["wheels"],
 		"segment": seg,
@@ -51,8 +51,12 @@ func spawn_car():
 		"uturn_start_pos": Vector3.ZERO,
 		"uturn_start_basis": Basis(),
 		"uturn_target_seg": null,
-		"uturn_target_offset": 0.0
-	})
+		"uturn_target_offset": 0.0,
+		"chosen_next_segment": null # NEW: Pre-selected next path to avoid collisions
+	}
+	
+	active_vehicles.append(car_data)
+	_pick_next_segment(car_data) # NEW: Pick the initial next segment avoiding occupied paths
 
 # NEW: Create sedan mesh with collision area for dragging
 func _create_sedan_mesh() -> Dictionary:
@@ -177,12 +181,14 @@ func _unhandled_input(event):
 					dragged_car.segment = closest_seg
 					dragged_car.progress = best_progress
 					dragged_car.state = "driving"
+					_pick_next_segment(dragged_car) # NEW: Pick next path after drop
 				else:
 					# Revert to original position if dropped too far from any track
 					dragged_car.node.global_position = drag_original_pos
 					dragged_car.segment = drag_original_segment
 					dragged_car.progress = drag_original_progress
 					dragged_car.state = "driving"
+					_pick_next_segment(dragged_car) # NEW: Re-evaluate next path
 
 				dragged_car = null
 				get_viewport().set_input_as_handled()
@@ -221,6 +227,7 @@ func on_track_regenerated():
 			car.segment = best_seg
 			car.progress = best_progress
 			car.state = "driving"
+			_pick_next_segment(car) # NEW: Pick next path after snapping
 		else:
 			car.segment = null
 
@@ -252,6 +259,7 @@ func _process(delta: float):
 				car.progress = car.uturn_target_offset
 				car.state = "driving"
 				car.current_speed = 0.0
+				_pick_next_segment(car) # NEW: Pick next path after U-turn completes
 			continue
 
 		var seg = car.segment
@@ -260,6 +268,49 @@ func _process(delta: float):
 		var car_pos = car.node.global_position
 		var car_fwd = -car.node.global_transform.basis.z.normalized()
 		var target_speed = car.base_speed
+		
+		# NEW: Intersection yielding logic
+		var curve_len = seg.curve.get_baked_length()
+		var dist_to_end = curve_len - car.progress
+		var approaching_new_intersection = false
+		var target_intersection_pos = Vector2.INF
+
+		if car.chosen_next_segment and car.chosen_next_segment.is_intersection:
+			if not car.segment.is_intersection or car.segment.grid_pos != car.chosen_next_segment.grid_pos:
+				approaching_new_intersection = true
+				target_intersection_pos = car.chosen_next_segment.grid_pos
+
+		if approaching_new_intersection and dist_to_end < 0.6:
+			var should_yield = false
+			for j in range(active_vehicles.size()):
+				if i == j: continue
+				var other = active_vehicles[j]
+				if other.state == "dragged" or other.state == "uturning": continue
+
+				# 1. Car already in the target intersection
+				if other.segment and other.segment.is_intersection and other.segment.grid_pos == target_intersection_pos:
+					should_yield = true
+					break
+
+				# 2. Car approaching the same target intersection
+				if other.chosen_next_segment and other.chosen_next_segment.is_intersection and other.chosen_next_segment.grid_pos == target_intersection_pos:
+					var other_is_approaching = not other.segment.is_intersection or other.segment.grid_pos != target_intersection_pos
+					if other_is_approaching:
+						# Find out who is closer to the intersection
+						var other_dist = 0.0
+						if other.segment and other.segment.curve:
+							other_dist = other.segment.curve.get_baked_length() - other.progress
+						
+						if other_dist < dist_to_end - 0.1:
+							should_yield = true
+							break
+						# Tie-breaker to prevent deadlocks when arriving simultaneously
+						elif abs(other_dist - dist_to_end) <= 0.1 and j < i:
+							should_yield = true
+							break
+
+			if should_yield:
+				target_speed = 0.0
 		
 		# Traffic Logic - Check interactions with other cars
 		for j in range(active_vehicles.size()):
@@ -298,7 +349,7 @@ func _process(delta: float):
 							else:
 								# Slow down to match speed
 								target_speed = min(target_speed, other.current_speed * 0.8)
-					else: # Crossing / Intersection
+					else: # Crossing / Intersection (Fallback if yielding logic missed something)
 						# Yield to the car with the lower index to prevent deadlocks
 						if dist < 0.45 and i > j:
 							target_speed = 0.0
@@ -316,16 +367,22 @@ func _process(delta: float):
 
 		# Move car along the curve
 		car.progress += car.current_speed * delta
-		var curve_len = seg.curve.get_baked_length()
 		
 		while car.progress > curve_len:
 			if curve_len <= 0.001: break
 				
-			if seg.next_segments.size() > 0:
+			if car.chosen_next_segment != null:
+				car.progress -= curve_len
+				seg = car.chosen_next_segment
+				car.segment = seg
+				curve_len = seg.curve.get_baked_length()
+				_pick_next_segment(car) # NEW: Pick the next one
+			elif seg.next_segments.size() > 0:
 				car.progress -= curve_len
 				seg = seg.next_segments.pick_random()
 				car.segment = seg
 				curve_len = seg.curve.get_baked_length()
+				_pick_next_segment(car) # NEW: Pick the next one
 			else:
 				# Dead end reached, automatically U-turn
 				car.progress = curve_len
@@ -339,6 +396,42 @@ func _process(delta: float):
 			
 			_animate_wheels(car, delta, car.current_speed)
 
+# NEW: Helper to pick the next segment while avoiding occupied paths
+func _pick_next_segment(car: Dictionary):
+	if not car.segment or car.segment.next_segments.is_empty():
+		car.chosen_next_segment = null
+		return
+
+	var valid_segments =[]
+	for next_seg in car.segment.next_segments:
+		var has_car = false
+		for other in active_vehicles:
+			if other == car: continue
+			if other.state == "dragged": continue
+			
+			# Check if another car is currently on this segment
+			if other.segment == next_seg:
+				has_car = true
+				break
+				
+			# Check if another car is targeting this segment and is close to it
+			if other.chosen_next_segment == next_seg:
+				var other_dist = 0.0
+				if other.segment and other.segment.curve:
+					other_dist = other.segment.curve.get_baked_length() - other.progress
+				if other_dist < 1.0: # Only care if they are relatively close
+					has_car = true
+					break
+					
+		if not has_car:
+			valid_segments.append(next_seg)
+
+	if valid_segments.size() > 0:
+		car.chosen_next_segment = valid_segments.pick_random()
+	else:
+		# Fallback if all paths are occupied
+		car.chosen_next_segment = car.segment.next_segments.pick_random()
+
 # Animates the sedan's wheels (steering and rolling)
 func _animate_wheels(car: Dictionary, delta: float, speed: float):
 	# Steering logic (Front wheels only)
@@ -350,7 +443,7 @@ func _animate_wheels(car: Dictionary, delta: float, speed: float):
 	var steer_angle = right.dot(desired_fwd) * 1.2
 	steer_angle = clamp(steer_angle, -0.6, 0.6)
 	
-	# Wheels array: [FL, FR, RL, RR]
+	# Wheels array:[FL, FR, RL, RR]
 	car.wheels[0].rotation.y = steer_angle
 	car.wheels[1].rotation.y = steer_angle
 	
