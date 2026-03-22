@@ -240,10 +240,58 @@ func on_track_regenerated():
 func _should_yield_at_intersection(car: Dictionary) -> bool:
 	return false
 
-# MODIFIED: This function is disabled and will always return the car's base speed,
-# preventing cars from stopping for other cars.
+# MODIFIED: This function now calculates a safe speed based on the distance
+# to the car directly in front, preventing collisions.
 func _get_speed_for_forward_obstacle(car: Dictionary) -> float:
-	return car.base_speed
+	var car_in_front = null
+	var min_dist = INF
+
+	# --- 1. Find the closest vehicle directly in front ---
+	for other_car in active_vehicles:
+		if other_car == car:
+			continue
+
+		var dist = -1.0
+
+		# Case 1: The other car is on the same segment, ahead of us.
+		if other_car.segment == car.segment and other_car.progress > car.progress:
+			dist = other_car.progress - car.progress
+		
+		# Case 2: The other car is on the next chosen segment.
+		elif car.chosen_next_segment != null and other_car.segment == car.chosen_next_segment:
+			var remaining_dist_on_current_seg = car.segment.curve.get_baked_length() - car.progress
+			dist = remaining_dist_on_current_seg + other_car.progress
+		
+		# If we found a car in front of us and it's closer than the previous one
+		if dist >= 0 and dist < min_dist:
+			min_dist = dist
+			car_in_front = other_car
+
+	# --- 2. If no car is in front, proceed at base speed ---
+	if car_in_front == null:
+		return car.base_speed
+
+	# --- 3. Calculate a safe speed based on distance ---
+	# The minimum safe distance is the length of our car plus the desired spacing.
+	# The car's length is its bounding box's Z-axis size.
+	var car_length = car.config.get("bounding_box_size", Vector3.ZERO).z
+	var safe_distance = car_length + vehicle_spacing
+	
+	# We define a larger "detection range" to start slowing down smoothly.
+	var detection_range = safe_distance * 2.5 # Start slowing down from 2.5x the safe distance
+
+	if min_dist > detection_range:
+		# Obstacle is too far away to matter.
+		return car.base_speed
+	elif min_dist <= safe_distance:
+		# We are too close. Match the speed of the car in front to avoid collision.
+		return car_in_front.current_speed
+	else:
+		# We are within the detection range but not yet at the minimum safe distance.
+		# We interpolate our speed between our base speed and the obstacle's speed.
+		# The closer we get, the more our speed will match the car in front.
+		var t = inverse_lerp(safe_distance, detection_range, min_dist)
+		return lerp(car_in_front.current_speed, car.base_speed, t)
 
 func _process(delta: float):
 	for i in range(active_vehicles.size()):
@@ -283,12 +331,8 @@ func _process(delta: float):
 		if not seg or not seg.curve: continue
 		
 		# --- Speed Calculation ---
-		# MODIFIED: All logic for slowing down has been removed.
-		# The car will always aim for its base speed.
-		var target_speed = car.base_speed
-		
-		# MODIFIED: Deadlock and stuck vehicle resolution has been removed
-		# as cars will no longer stop.
+		# MODIFIED: The car's target speed is now determined by checking for obstacles.
+		var target_speed = _get_speed_for_forward_obstacle(car)
 
 		# --- Physics Update ---
 		# Smoothly adjust the car's current speed towards its target speed.
