@@ -4,36 +4,36 @@ extends Node3D
 @export var vehicle_speed: float = 2.0
 @export var vehicle_spacing: float = 5.0
 
-# NEW: Global flag to draw debug bounding boxes for all spawned cars.
+# Global flag to draw debug bounding boxes for all spawned cars.
 # This can be enabled from the Godot Editor's Inspector panel.
 @export var draw_debug_bounding_boxes: bool = false
 
-# MODIFIED: Array to configure different vehicle models.
-# Each dictionary now includes a "bounding_box_size" to define the collision area.
-var vehicle_models = [
+# Array to configure different vehicle models.
+# Each dictionary includes a "bounding_box_size" to define the collision area.
+var vehicle_models =[
 	{
 		"path": "res://models/car-kit/ambulance.glb",
 		"scale": 0.2,
 		"initial_rotation_degrees": Vector3(0, 180, 0),
-		"bounding_box_size": Vector3(1.2, 2, 3.5) # MODIFIED: Added specific bounding box size.
+		"bounding_box_size": Vector3(1.2, 2, 3.5) 
 	},
 	{
 		"path": "res://models/car-kit/delivery.glb",
 		"scale": 0.2,
 		"initial_rotation_degrees": Vector3(0, 180, 0),
-		"bounding_box_size": Vector3(1.2, 2, 3.5) # MODIFIED: Added specific bounding box size.
+		"bounding_box_size": Vector3(1.2, 2, 3.5) 
 	},
 	{
 		"path": "res://models/car-kit/firetruck.glb",
 		"scale": 0.2,
 		"initial_rotation_degrees": Vector3(0, 180, 0),
-		"bounding_box_size": Vector3(1.2, 2, 3.5) # MODIFIED: Added specific bounding box size.
+		"bounding_box_size": Vector3(1.2, 2, 3.5) 
 	},
 	{
 		"path": "res://models/car-kit/suv.glb",
 		"scale": 0.2,
 		"initial_rotation_degrees": Vector3(0, 180, 0),
-		"bounding_box_size": Vector3(1.2, 2, 3.5) # MODIFIED: Added specific bounding box size.
+		"bounding_box_size": Vector3(1.2, 2, 3.5) 
 	}
 ]
 
@@ -45,8 +45,6 @@ var camera: Camera3D
 
 # --- State ---
 var active_vehicles: Array[Dictionary] =[]
-var tile_x: float = 2.0 # NEW: Store tile size for grid traversal
-var tile_z: float = 2.0 # NEW: Store tile size for grid traversal
 
 # Drag & Drop State
 var dragged_car = null
@@ -54,14 +52,12 @@ var drag_original_pos := Vector3.ZERO
 var drag_original_segment = null
 var drag_original_progress := 0.0
 
+# MODIFIED: Removed tile_x and tile_z as they are no longer needed for manual intersection BFS.
+
 func initialize(editor: Node3D, track_gen: Node3D, cam: Camera3D):
 	level_editor = editor
 	track_generator = track_gen
 	camera = cam
-	
-	# NEW: Get tile dimensions from the editor for intersection checking.
-	tile_x = level_editor.tile_x
-	tile_z = level_editor.tile_z
 	
 	track_generator.track_regenerated.connect(on_track_regenerated)
 
@@ -100,8 +96,7 @@ func spawn_car():
 	active_vehicles.append(car_data)
 	_pick_next_segment(car_data)
 
-# MODIFIED: This function now creates a configurable bounding box for collision
-# and can also draw a debug visual for it.
+# MODIFIED: This function now creates a CharacterBody3D as the root node to utilize the physics engine.
 func _create_vehicle_instance() -> Dictionary:
 	if vehicle_models.is_empty():
 		return {}
@@ -113,27 +108,30 @@ func _create_vehicle_instance() -> Dictionary:
 		printerr("Failed to load car scene: ", car_config.path)
 		return {}
 		
-	var car_root = car_scene.instantiate()
-	car_root.scale = Vector3.ONE * car_config.get("scale", 0.2)
-	car_root.rotation_degrees = car_config.get("initial_rotation_degrees", Vector3.ZERO)
+	# NEW: Create a CharacterBody3D as the root physics node
+	var physics_body = CharacterBody3D.new()
+	physics_body.set_meta("is_car", true)
 	
-	# Create the collision area
-	var area = Area3D.new()
-	area.set_meta("is_car", true)
+	# Instantiate visual model and make it a child of the physics body
+	var car_visual = car_scene.instantiate()
+	var scale_factor = car_config.get("scale", 0.2)
+	car_visual.scale = Vector3.ONE * scale_factor
+	car_visual.rotation_degrees = car_config.get("initial_rotation_degrees", Vector3.ZERO)
+	physics_body.add_child(car_visual)
+	
+	# Create the collision shape
 	var shape = CollisionShape3D.new()
 	var box = BoxShape3D.new()
 	
-	# NEW: Use the specific bounding box size from the car's configuration.
-	# Fallback to a default size if not specified.
-	var bbox_size = car_config.get("bounding_box_size", Vector3(0.4, 0.4, 0.6))
+	# Scale the bounding box size by the model's scale factor
+	var bbox_size = car_config.get("bounding_box_size", Vector3(0.4, 0.4, 0.6)) * scale_factor
 	box.size = bbox_size
 	
 	shape.shape = box
-	area.position.y = bbox_size.y / 2.0 # Center the box vertically
-	area.add_child(shape)
-	car_root.add_child(area)
+	shape.position.y = bbox_size.y / 2.0 # Center the box vertically
+	physics_body.add_child(shape)
 	
-	# NEW: If the debug flag is on, create a visible mesh for the bounding box.
+	# If the debug flag is on, create a visible mesh for the bounding box.
 	if draw_debug_bounding_boxes:
 		var debug_mesh_instance = MeshInstance3D.new()
 		var debug_mesh = BoxMesh.new()
@@ -146,10 +144,10 @@ func _create_vehicle_instance() -> Dictionary:
 		debug_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		debug_mesh_instance.material_override = debug_material
 		
-		# Add the visual mesh as a child of the Area3D to align it perfectly.
-		area.add_child(debug_mesh_instance)
+		debug_mesh_instance.position.y = bbox_size.y / 2.0
+		physics_body.add_child(debug_mesh_instance)
 		
-	return {"root": car_root, "config": car_config}
+	return {"root": physics_body, "config": car_config}
 
 func _unhandled_input(event):
 	if not camera: return
@@ -161,11 +159,14 @@ func _unhandled_input(event):
 			var origin = camera.project_ray_origin(mouse_pos)
 			var end = origin + camera.project_ray_normal(mouse_pos) * 1000.0
 			var query = PhysicsRayQueryParameters3D.create(origin, end)
-			query.collide_with_areas = true
+			
+			# MODIFIED: Cars are now CharacterBody3D, so we check for bodies instead of areas.
+			query.collide_with_areas = false 
+			query.collide_with_bodies = true
 			var result = space_state.intersect_ray(query)
 			
 			if result and result.collider.has_meta("is_car"):
-				var car_node = result.collider.get_parent()
+				var car_node = result.collider # The collider is the CharacterBody3D itself
 				for car in active_vehicles:
 					if car.node == car_node:
 						dragged_car = car
@@ -241,133 +242,11 @@ func on_track_regenerated():
 		else:
 			car.segment = null
 
-# NEW: Helper function to check if a specific grid tile contains an intersection piece.
-func _is_intersection_tile(grid_pos: Vector2) -> bool:
-	# It's an intersection tile if any track segment at that grid position
-	# has been flagged as part of an intersection.
-	for seg in track_generator.track_segments:
-		if seg.grid_pos == grid_pos and seg.is_intersection:
-			return true
-	return false
+# MODIFIED: Removed manual intersection yielding and forward obstacle detection functions.
+# The physics engine will now handle collisions naturally.
 
-# NEW: Traverses the grid to find all connected tiles that form a single large intersection.
-# MODIFIED: Removed incorrect 'Node' type hint for start_segment, as it's a 'TrackSegment' (RefCounted).
-func _get_entire_intersection_zone_segments(start_segment) -> Array:
-	# Use a breadth-first search (BFS) to find all connected intersection tiles.
-	var tile_queue: Array[Vector2] = [start_segment.grid_pos]
-	var visited_tiles: Dictionary = {start_segment.grid_pos: true}
-	var intersection_tiles: Array[Vector2] = [start_segment.grid_pos]
-	
-	var head = 0
-	while head < tile_queue.size():
-		var current_tile = tile_queue[head]
-		head += 1
-		
-		# Define the four neighbors of the current tile.
-		var neighbors = [
-			current_tile + Vector2(tile_x, 0),  # Right
-			current_tile + Vector2(-tile_x, 0), # Left
-			current_tile + Vector2(0, tile_z),   # Down
-			current_tile + Vector2(0, -tile_z)  # Up
-		]
-		
-		# Check each neighbor.
-		for neighbor_pos in neighbors:
-			if not visited_tiles.has(neighbor_pos) and _is_intersection_tile(neighbor_pos):
-				visited_tiles[neighbor_pos] = true
-				tile_queue.append(neighbor_pos)
-				intersection_tiles.append(neighbor_pos)
-				
-	# Now that we have all the tiles, collect all track segments that belong to them.
-	# MODIFIED: Removed incorrect 'Node' type hint for the array, as it holds 'TrackSegment' objects.
-	var result_segments: Array = []
-	for seg in track_generator.track_segments:
-		if seg.grid_pos in intersection_tiles:
-			result_segments.append(seg)
-			
-	return result_segments
-
-# MODIFIED: This function now correctly identifies multi-tile intersections and checks
-# the entire zone for other cars before proceeding.
-func _should_yield_at_intersection(car: Dictionary) -> bool:
-	var next_seg = car.chosen_next_segment
-	# 1. Only check if approaching a valid intersection segment.
-	if next_seg == null or not next_seg.is_intersection:
-		return false
-
-	# 2. Only check if the car is close enough to the intersection entrance.
-	var remaining_dist = car.segment.curve.get_baked_length() - car.progress
-	if remaining_dist > (vehicle_spacing * 1.5):
-		return false
-
-	# 3. Find all track segments that make up the entire connected intersection zone.
-	var intersection_segments = _get_entire_intersection_zone_segments(next_seg)
-
-	# 4. Check if any other car is currently occupying any segment in that zone.
-	for other_car in active_vehicles:
-		if other_car != car and other_car.segment in intersection_segments:
-			# Another car is in the intersection. We must stop and yield.
-			return true
-
-	# 5. If we finish the loop, the intersection is clear.
-	return false
-
-# MODIFIED: This function now calculates a safe speed based on the distance
-# to the car directly in front, preventing collisions and overlap.
-# It will also return 0 if the car in front has stopped or is too close.
-func _get_speed_for_forward_obstacle(car: Dictionary) -> float:
-	var car_in_front = null
-	var min_dist = INF
-
-	# --- 1. Find the closest vehicle directly in front ---
-	for other_car in active_vehicles:
-		if other_car == car:
-			continue
-
-		var dist = -1.0
-
-		# Case 1: The other car is on the same segment, ahead of us.
-		if other_car.segment == car.segment and other_car.progress > car.progress:
-			dist = other_car.progress - car.progress
-
-		# Case 2: The other car is on the next chosen segment.
-		elif car.chosen_next_segment != null and other_car.segment == car.chosen_next_segment:
-			var remaining_dist_on_current_seg = car.segment.curve.get_baked_length() - car.progress
-			dist = remaining_dist_on_current_seg + other_car.progress
-
-		# If we found a car in front of us and it's closer than the previous one
-		if dist >= 0 and dist < min_dist:
-			min_dist = dist
-			car_in_front = other_car
-
-	# --- 2. If no car is in front, proceed at base speed ---
-	if car_in_front == null:
-		return car.base_speed
-
-	# --- 3. Calculate a safe speed based on distance to the car in front ---
-	var current_car_length = car.config.get("bounding_box_size", Vector3.ZERO).z
-	var front_car_length = car_in_front.config.get("bounding_box_size", Vector3.ZERO).z
-
-	# MODIFIED: This logic has been refactored for a more robust and immediate stop.
-	var safe_distance = (current_car_length / 2.0) + (front_car_length / 2.0) + vehicle_spacing
-	var detection_range = safe_distance * 2.5 # The range at which we start slowing down.
-
-	# If the car in front is within the minimum safe distance, we must stop completely.
-	if min_dist <= safe_distance:
-		return 0.0
-
-	# If the car is outside the detection range, it can drive at its normal speed.
-	if min_dist > detection_range:
-		return car.base_speed
-	
-	# If we are within the detection range but not yet at the safe distance,
-	# interpolate our speed between our base speed and the obstacle's speed.
-	# The closer we get, the more our speed will match the car in front.
-	else:
-		var t = inverse_lerp(safe_distance, detection_range, min_dist)
-		return lerp(car_in_front.current_speed, car.base_speed, t)
-
-func _process(delta: float):
+# MODIFIED: Changed _process to _physics_process to handle CharacterBody3D movement correctly.
+func _physics_process(delta: float):
 	for i in range(active_vehicles.size()):
 		var car = active_vehicles[i]
 		
@@ -379,14 +258,8 @@ func _process(delta: float):
 			car.uturn_timer -= delta
 			var t = 1.0 - max(car.uturn_timer, 0.0)
 			
-			var config = car.config
-			var rotation_degrees = config.get("initial_rotation_degrees", Vector3.ZERO)
-			var initial_rotation_radians = Vector3(deg_to_rad(rotation_degrees.x), deg_to_rad(rotation_degrees.y), deg_to_rad(rotation_degrees.z))
-			var initial_rotation = Basis.from_euler(initial_rotation_radians)
-			var scale = config.get("scale", 0.2)
-			
 			var target_track_xform = car.uturn_target_seg.curve.sample_baked_with_rotation(car.uturn_target_offset, false, false)
-			var target_basis = (target_track_xform.basis * initial_rotation).scaled(Vector3.ONE * scale)
+			var target_basis = target_track_xform.basis
 			var target_origin = target_track_xform.origin
 			target_origin.y += 0.05
 			
@@ -404,77 +277,80 @@ func _process(delta: float):
 		var seg = car.segment
 		if not seg or not seg.curve: continue
 		
-		# --- Speed Calculation ---
-		# MODIFIED: Check if the car needs to stop for an intersection.
-		# If it does, its target speed is 0. Otherwise, calculate speed based on the car in front.
-		var target_speed: float
-		if _should_yield_at_intersection(car):
-			target_speed = 0.0
-			# MODIFIED: When stopping for an intersection, also force current_speed to 0
-			# to prevent inching forward due to the lerp smoothing.
-			car.current_speed = 0.0
-		else:
-			target_speed = _get_speed_for_forward_obstacle(car)
-
-		# NEW: Hard stop check. If the target speed is zero (because we are too close to another car),
-		# immediately set the current speed to zero to prevent overlap from the lerp delay.
-		if target_speed < 0.01:
-			car.current_speed = 0.0
-		else:
-			# Smoothly adjust the car's current speed towards its target speed.
-			car.current_speed = lerp(car.current_speed, target_speed, delta * 4.0)
+		# NEW: Accelerate towards base speed. If the car bounced backward, this will smoothly
+		# slow it down and propel it forward again.
+		car.current_speed = move_toward(car.current_speed, car.base_speed, delta * 5.0)
 		
-		# Apply movement based on the final calculated speed.
-		car.progress += car.current_speed * delta
+		var step = car.current_speed * delta
+		var projected_progress = car.progress + step
 
 		# --- Segment Transition Logic ---
 		var curve_len = seg.curve.get_baked_length()
-		while car.progress > curve_len:
+		while projected_progress > curve_len:
 			if curve_len <= 0.001: break
 				
 			if car.chosen_next_segment != null:
-				car.progress -= curve_len
+				projected_progress -= curve_len
 				seg = car.chosen_next_segment
 				car.segment = seg
 				curve_len = seg.curve.get_baked_length()
 				_pick_next_segment(car)
 			elif seg.next_segments.size() > 0:
-				car.progress -= curve_len
+				projected_progress -= curve_len
 				seg = seg.next_segments.pick_random()
 				car.segment = seg
 				curve_len = seg.curve.get_baked_length()
 				_pick_next_segment(car)
 			else:
 				# Reached a dead end, force a U-turn.
-				car.progress = curve_len
+				projected_progress = curve_len
 				_start_uturn(car)
 				break
+				
+		# NEW: Handle bouncing backward past the start of the current segment.
+		# This prevents the car from falling off the track backwards.
+		if projected_progress < 0.0:
+			projected_progress = 0.0
+			car.current_speed = 0.0
 		
-		# --- Visual Update ---
+		# --- Physics Movement & Visual Update ---
 		if car.state == "driving":
-			var track_transform = seg.curve.sample_baked_with_rotation(car.progress, false, false)
+			var target_transform = seg.curve.sample_baked_with_rotation(projected_progress, false, false)
+			var target_origin = target_transform.origin
+			target_origin.y += 0.05
 			
-			var config = car.config
-			var rotation_degrees = config.get("initial_rotation_degrees", Vector3.ZERO)
-			var initial_rotation_radians = Vector3(deg_to_rad(rotation_degrees.x), deg_to_rad(rotation_degrees.y), deg_to_rad(rotation_degrees.z))
-			var initial_rotation = Basis.from_euler(initial_rotation_radians)
-			var scale = config.get("scale", 0.2)
+			# NEW: Calculate motion vector and use the physics engine to move the car.
+			var motion = target_origin - car.node.global_position
+			var collision = car.node.move_and_collide(motion)
 			
-			var new_basis = (track_transform.basis * initial_rotation).scaled(Vector3.ONE * scale)
+			# NEW: If a collision occurs, bounce the cars apart.
+			if collision:
+				# Reverse the current car's speed to bounce backwards.
+				car.current_speed = -car.base_speed * 0.8
+				
+				# Check if we hit another car and apply a bounce to it as well.
+				var collider = collision.get_collider()
+				if collider and collider.has_meta("is_car"):
+					for other_car in active_vehicles:
+						if other_car.node == collider:
+							other_car.current_speed = -other_car.base_speed * 0.8
+							break
+							
+			# NEW: Sync progress to actual physical position. This ensures that if the car
+			# was stopped by a collision, its progress along the curve matches its actual location.
+			car.progress = seg.curve.get_closest_offset(car.node.global_position)
 			
-			var new_origin = track_transform.origin
-			new_origin.y += 0.05
-			
-			car.node.global_transform = Transform3D(new_basis, new_origin)
+			# Update rotation to align the CharacterBody3D with the track.
+			# The visual child node handles its own model-specific rotation offset.
+			var actual_transform = seg.curve.sample_baked_with_rotation(car.progress, false, false)
+			car.node.global_transform.basis = actual_transform.basis
 
-# MODIFIED: Logic to check for other cars has been removed.
-# The car will now pick a random next segment regardless of traffic.
 func _pick_next_segment(car: Dictionary):
 	if not car.segment or car.segment.next_segments.is_empty():
 		car.chosen_next_segment = null
 		return
 
-	# Simply pick a random next path without checking if it's occupied.
+	# Simply pick a random next path.
 	car.chosen_next_segment = car.segment.next_segments.pick_random()
 
 
