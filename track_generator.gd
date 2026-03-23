@@ -1,14 +1,23 @@
 extends Node3D
 
 # --- Signals ---
-# NEW: Emitted when the track is rebuilt so cars can snap to new segments
+# Emitted when the track is rebuilt so cars can snap to new segments
 signal track_regenerated
 
 # --- Config ---
 @export var lane_offset: float = 0.2
 @export var turn_radius: float = 1.0 # Modifier for the curve radius
-@export var track_color: Color = Color(0.6, 0.6, 0.6) # Dark grey/black
 @export var track_width: float = 0.01
+
+# NEW: Option to disable track visualization entirely.
+@export var visualize_tracks: bool = true
+# NEW: Option to use alternating colors for debugging track connections.
+@export var use_alternating_colors: bool = true
+# The two colors to alternate between for debugging.
+@export var debug_color_a: Color = Color("#0000AA")
+@export var debug_color_b: Color = Color("#F7DC6F")
+# Default track color, used when alternating colors are disabled.
+@export var default_track_color: Color = Color(0.6, 0.6, 0.6) # Dark grey/black
 
 # --- Dependencies ---
 var level_editor: Node3D
@@ -18,13 +27,13 @@ var tile_z: float = 2.0
 
 var paths_container: Node3D
 
-# NEW: Store all segments to allow cars to find opposite lanes for U-turns
+# Store all segments to allow cars to find opposite lanes for U-turns
 var track_segments: Array[TrackSegment] =[]
 
 # Local segment definitions (at 0 degrees rotation)
 var local_segments = {}
 
-# MODIFIED: TrackSegment now holds its own curve, a list of connected next segments, and intersection data
+# MODIFIED: TrackSegment now holds its own curve, a list of connected next segments, intersection data, and a color for visualization.
 class TrackSegment extends RefCounted:
 	var start_pos: Vector3
 	var start_dir: Vector3
@@ -33,8 +42,11 @@ class TrackSegment extends RefCounted:
 	var type: String
 	var curve: Curve3D
 	var next_segments: Array[TrackSegment] =[]
-	var is_intersection: bool = false # NEW: Flags if this segment is part of an intersection to allow cars to yield
-	var grid_pos: Vector2 # NEW: The grid coordinate of this segment to identify which intersection it belongs to
+	var is_intersection: bool = false
+	var grid_pos: Vector2
+	# MODIFIED: Initialized with a default color and added a flag to track if it has been colored.
+	var color: Color = Color.BLACK
+	var is_colored: bool = false # NEW: Flag to track if the color has been intentionally set.
 
 func initialize(editor: Node3D):
 	level_editor = editor
@@ -123,7 +135,7 @@ func _get_road_type(model_path: String) -> String:
 	if "road-crossroad" in model_path: return "crossroad"
 	return ""
 
-# MODIFIED: Generates the track graph and stores all segments globally
+# MODIFIED: Generates the track graph, assigns colors for debugging, and handles the visualization toggle.
 func generate_tracks():
 	track_segments.clear()
 	for child in paths_container.get_children():
@@ -150,7 +162,6 @@ func generate_tracks():
 						g_seg.end_dir = (xform.basis * l_seg["end_dir"]).normalized()
 						g_seg.type = l_seg["type"]
 						
-						# NEW: Set intersection metadata for traffic yielding
 						g_seg.is_intersection = (r_type == "intersection" or r_type == "crossroad")
 						g_seg.grid_pos = grid_pos
 						
@@ -167,26 +178,51 @@ func generate_tracks():
 				
 	track_segments = all_segments
 	
+	# If visualization is turned off, stop here.
+	if not visualize_tracks:
+		emit_signal("track_regenerated")
+		return
+		
+	# MODIFIED: Logic now uses the `is_colored` flag instead of checking for null.
+	if use_alternating_colors:
+		# Iterate through all segments and color them and their neighbors.
+		# This ensures connected segments have different colors.
+		for seg in all_segments:
+			if not seg.is_colored:
+				seg.color = debug_color_a # Assign the first color if not yet colored.
+				seg.is_colored = true
+			# Determine the color for neighbors based on the current segment's color.
+			var neighbor_color = debug_color_b if seg.color == debug_color_a else debug_color_a
+			for next_seg in seg.next_segments:
+				if not next_seg.is_colored: # Only color neighbors that haven't been colored.
+					next_seg.color = neighbor_color
+					next_seg.is_colored = true
+	else:
+		# If not using alternating colors, assign the default color to all segments.
+		for seg in all_segments:
+			seg.color = default_track_color
+			
 	# 3. Draw the visual track mesh efficiently using a single SurfaceTool
 	var st = SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	
+	# Create a material that uses vertex colors for the track lines.
 	var mat = StandardMaterial3D.new()
-	mat.albedo_color = track_color
+	mat.vertex_color_use_as_albedo = true # This tells the material to use the colors we provide per vertex.
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	st.set_material(mat)
 	
 	for seg in all_segments:
-		_add_curve_to_surfacetool(st, seg.curve)
+		# Pass the assigned color to the drawing function.
+		_add_curve_to_surfacetool(st, seg.curve, seg.color)
 		
 	var mesh = st.commit()
 	var mi = MeshInstance3D.new()
 	mi.mesh = mesh
 	paths_container.add_child(mi)
 	
-	# NEW: Emit signal to notify track_cars.gd to snap vehicles to new track
 	emit_signal("track_regenerated")
 
-# NEW: Builds a standalone Curve3D for a single segment
 func _build_curve_for_segment(seg: TrackSegment) -> Curve3D:
 	var curve = Curve3D.new()
 	
@@ -223,8 +259,8 @@ func _build_curve_for_segment(seg: TrackSegment) -> Curve3D:
 		
 	return curve
 
-# MODIFIED: Appends a curve's visual geometry to a shared SurfaceTool
-func _add_curve_to_surfacetool(st: SurfaceTool, curve: Curve3D):
+# Appends a curve's visual geometry to a shared SurfaceTool using a specified color.
+func _add_curve_to_surfacetool(st: SurfaceTool, curve: Curve3D, color: Color):
 	var points = curve.tessellate(5, 0.1)
 	if points.size() < 2: return
 	
@@ -236,22 +272,29 @@ func _add_curve_to_surfacetool(st: SurfaceTool, curve: Curve3D):
 		if dir == Vector3.ZERO: continue
 		var left = dir.cross(up).normalized() * (track_width / 2.0)
 		
-		# Offset slightly on Y to prevent Z-fighting with the road
 		var v1 = p1 + left + Vector3(0, 0.05, 0)
 		var v2 = p1 - left + Vector3(0, 0.05, 0)
 		var v3 = p2 + left + Vector3(0, 0.05, 0)
 		var v4 = p2 - left + Vector3(0, 0.05, 0)
 		
+		# Set color before adding each vertex for the first triangle.
+		st.set_color(color)
 		st.set_normal(up)
 		st.add_vertex(v1)
+		st.set_color(color)
 		st.set_normal(up)
 		st.add_vertex(v2)
+		st.set_color(color)
 		st.set_normal(up)
 		st.add_vertex(v3)
 		
+		# Set color before adding each vertex for the second triangle.
+		st.set_color(color)
 		st.set_normal(up)
 		st.add_vertex(v2)
+		st.set_color(color)
 		st.set_normal(up)
 		st.add_vertex(v4)
+		st.set_color(color)
 		st.set_normal(up)
 		st.add_vertex(v3)
