@@ -2,11 +2,11 @@ extends Node3D
 
 # --- Config ---
 @export var vehicle_speed: float = 2.0
-@export var vehicle_spacing: float = 1.0
+@export var vehicle_spacing: float = 5.0
 
 # NEW: Global flag to draw debug bounding boxes for all spawned cars.
 # This can be enabled from the Godot Editor's Inspector panel.
-@export var draw_debug_bounding_boxes: bool = true
+@export var draw_debug_bounding_boxes: bool = false
 
 # MODIFIED: Array to configure different vehicle models.
 # Each dictionary now includes a "bounding_box_size" to define the collision area.
@@ -241,7 +241,7 @@ func _should_yield_at_intersection(car: Dictionary) -> bool:
 	return false
 
 # MODIFIED: This function now calculates a safe speed based on the distance
-# to the car directly in front, preventing collisions.
+# to the car directly in front, preventing collisions and overlap.
 func _get_speed_for_forward_obstacle(car: Dictionary) -> float:
 	var car_in_front = null
 	var min_dist = INF
@@ -272,10 +272,13 @@ func _get_speed_for_forward_obstacle(car: Dictionary) -> float:
 		return car.base_speed
 
 	# --- 3. Calculate a safe speed based on distance ---
-	# The minimum safe distance is the length of our car plus the desired spacing.
-	# The car's length is its bounding box's Z-axis size.
-	var car_length = car.config.get("bounding_box_size", Vector3.ZERO).z
-	var safe_distance = car_length + vehicle_spacing
+	# MODIFICATION: The safe distance is now calculated from the mid-point of each car.
+	# This prevents the cars from overlapping by taking half the length of each car into account.
+	var current_car_length = car.config.get("bounding_box_size", Vector3.ZERO).z
+	var front_car_length = car_in_front.config.get("bounding_box_size", Vector3.ZERO).z
+	
+	# The minimum distance between centers is half of each car's length plus the desired spacing.
+	var safe_distance = (current_car_length / 2.0) + (front_car_length / 2.0) + vehicle_spacing
 	
 	# We define a larger "detection range" to start slowing down smoothly.
 	var detection_range = safe_distance * 2.5 # Start slowing down from 2.5x the safe distance
@@ -285,7 +288,7 @@ func _get_speed_for_forward_obstacle(car: Dictionary) -> float:
 		return car.base_speed
 	elif min_dist <= safe_distance:
 		# We are too close. Match the speed of the car in front to avoid collision.
-		return car_in_front.current_speed
+		return car_in_front.current_speed - 1
 	else:
 		# We are within the detection range but not yet at the minimum safe distance.
 		# We interpolate our speed between our base speed and the obstacle's speed.
