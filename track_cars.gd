@@ -45,6 +45,8 @@ var camera: Camera3D
 
 # --- State ---
 var active_vehicles: Array[Dictionary] =[]
+var tile_x: float = 2.0 # NEW: Store tile size for grid traversal
+var tile_z: float = 2.0 # NEW: Store tile size for grid traversal
 
 # Drag & Drop State
 var dragged_car = null
@@ -56,6 +58,10 @@ func initialize(editor: Node3D, track_gen: Node3D, cam: Camera3D):
 	level_editor = editor
 	track_generator = track_gen
 	camera = cam
+	
+	# NEW: Get tile dimensions from the editor for intersection checking.
+	tile_x = level_editor.tile_x
+	tile_z = level_editor.tile_z
 	
 	track_generator.track_regenerated.connect(on_track_regenerated)
 
@@ -235,13 +241,80 @@ func on_track_regenerated():
 		else:
 			car.segment = null
 
-# MODIFIED: This function is disabled and will always return false,
-# preventing cars from stopping at intersections.
+# NEW: Helper function to check if a specific grid tile contains an intersection piece.
+func _is_intersection_tile(grid_pos: Vector2) -> bool:
+	# It's an intersection tile if any track segment at that grid position
+	# has been flagged as part of an intersection.
+	for seg in track_generator.track_segments:
+		if seg.grid_pos == grid_pos and seg.is_intersection:
+			return true
+	return false
+
+# NEW: Traverses the grid to find all connected tiles that form a single large intersection.
+# MODIFIED: Removed incorrect 'Node' type hint for start_segment, as it's a 'TrackSegment' (RefCounted).
+func _get_entire_intersection_zone_segments(start_segment) -> Array:
+	# Use a breadth-first search (BFS) to find all connected intersection tiles.
+	var tile_queue: Array[Vector2] = [start_segment.grid_pos]
+	var visited_tiles: Dictionary = {start_segment.grid_pos: true}
+	var intersection_tiles: Array[Vector2] = [start_segment.grid_pos]
+	
+	var head = 0
+	while head < tile_queue.size():
+		var current_tile = tile_queue[head]
+		head += 1
+		
+		# Define the four neighbors of the current tile.
+		var neighbors = [
+			current_tile + Vector2(tile_x, 0),  # Right
+			current_tile + Vector2(-tile_x, 0), # Left
+			current_tile + Vector2(0, tile_z),   # Down
+			current_tile + Vector2(0, -tile_z)  # Up
+		]
+		
+		# Check each neighbor.
+		for neighbor_pos in neighbors:
+			if not visited_tiles.has(neighbor_pos) and _is_intersection_tile(neighbor_pos):
+				visited_tiles[neighbor_pos] = true
+				tile_queue.append(neighbor_pos)
+				intersection_tiles.append(neighbor_pos)
+				
+	# Now that we have all the tiles, collect all track segments that belong to them.
+	# MODIFIED: Removed incorrect 'Node' type hint for the array, as it holds 'TrackSegment' objects.
+	var result_segments: Array = []
+	for seg in track_generator.track_segments:
+		if seg.grid_pos in intersection_tiles:
+			result_segments.append(seg)
+			
+	return result_segments
+
+# MODIFIED: This function now correctly identifies multi-tile intersections and checks
+# the entire zone for other cars before proceeding.
 func _should_yield_at_intersection(car: Dictionary) -> bool:
+	var next_seg = car.chosen_next_segment
+	# 1. Only check if approaching a valid intersection segment.
+	if next_seg == null or not next_seg.is_intersection:
+		return false
+
+	# 2. Only check if the car is close enough to the intersection entrance.
+	var remaining_dist = car.segment.curve.get_baked_length() - car.progress
+	if remaining_dist > (vehicle_spacing * 1.5):
+		return false
+
+	# 3. Find all track segments that make up the entire connected intersection zone.
+	var intersection_segments = _get_entire_intersection_zone_segments(next_seg)
+
+	# 4. Check if any other car is currently occupying any segment in that zone.
+	for other_car in active_vehicles:
+		if other_car != car and other_car.segment in intersection_segments:
+			# Another car is in the intersection. We must stop and yield.
+			return true
+
+	# 5. If we finish the loop, the intersection is clear.
 	return false
 
 # MODIFIED: This function now calculates a safe speed based on the distance
 # to the car directly in front, preventing collisions and overlap.
+# It will also return 0 if the car in front has stopped.
 func _get_speed_for_forward_obstacle(car: Dictionary) -> float:
 	var car_in_front = null
 	var min_dist = INF
@@ -272,23 +345,23 @@ func _get_speed_for_forward_obstacle(car: Dictionary) -> float:
 		return car.base_speed
 
 	# --- 3. Calculate a safe speed based on distance ---
-	# MODIFICATION: The safe distance is now calculated from the mid-point of each car.
-	# This prevents the cars from overlapping by taking half the length of each car into account.
 	var current_car_length = car.config.get("bounding_box_size", Vector3.ZERO).z
 	var front_car_length = car_in_front.config.get("bounding_box_size", Vector3.ZERO).z
 	
-	# The minimum distance between centers is half of each car's length plus the desired spacing.
 	var safe_distance = (current_car_length / 2.0) + (front_car_length / 2.0) + vehicle_spacing
-	
-	# We define a larger "detection range" to start slowing down smoothly.
-	var detection_range = safe_distance * 2.5 # Start slowing down from 2.5x the safe distance
+	var detection_range = safe_distance * 2.5
+
+	# MODIFIED: If the car in front is stopped (current_speed is near zero)
+	# and we are within the safe distance, we must also stop completely.
+	if car_in_front.current_speed < 0.1 and min_dist <= safe_distance:
+		return 0.0
 
 	if min_dist > detection_range:
 		# Obstacle is too far away to matter.
 		return car.base_speed
 	elif min_dist <= safe_distance:
-		# We are too close. Match the speed of the car in front to avoid collision.
-		return car_in_front.current_speed - 1
+		# We are too close. Reduce to -1 of the speed of the car in front to avoid collision.
+		return car_in_front.current_speed -1
 	else:
 		# We are within the detection range but not yet at the minimum safe distance.
 		# We interpolate our speed between our base speed and the obstacle's speed.
@@ -334,13 +407,19 @@ func _process(delta: float):
 		if not seg or not seg.curve: continue
 		
 		# --- Speed Calculation ---
-		# MODIFIED: The car's target speed is now determined by checking for obstacles.
-		var target_speed = _get_speed_for_forward_obstacle(car)
-
-		# --- Physics Update ---
-		# Smoothly adjust the car's current speed towards its target speed.
-		car.current_speed = lerp(car.current_speed, target_speed, delta * 4.0)
-		car.progress += car.current_speed * delta
+		# MODIFIED: Check if the car needs to stop for an intersection.
+		# If it does, its target speed is 0. Otherwise, calculate speed based on the car in front.
+		var target_speed: float
+		if _should_yield_at_intersection(car):
+			target_speed = 0.0
+			#stop quickly
+			car.current_speed = 0.0
+			car.progress += 0.0
+		else:
+			target_speed = _get_speed_for_forward_obstacle(car)
+			# Smoothly adjust the car's current speed towards its target speed.
+			car.current_speed = lerp(car.current_speed, target_speed, delta * 4.0)
+			car.progress += car.current_speed * delta
 		
 		# --- Segment Transition Logic ---
 		var curve_len = seg.curve.get_baked_length()
