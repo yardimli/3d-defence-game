@@ -314,7 +314,7 @@ func _should_yield_at_intersection(car: Dictionary) -> bool:
 
 # MODIFIED: This function now calculates a safe speed based on the distance
 # to the car directly in front, preventing collisions and overlap.
-# It will also return 0 if the car in front has stopped.
+# It will also return 0 if the car in front has stopped or is too close.
 func _get_speed_for_forward_obstacle(car: Dictionary) -> float:
 	var car_in_front = null
 	var min_dist = INF
@@ -329,12 +329,12 @@ func _get_speed_for_forward_obstacle(car: Dictionary) -> float:
 		# Case 1: The other car is on the same segment, ahead of us.
 		if other_car.segment == car.segment and other_car.progress > car.progress:
 			dist = other_car.progress - car.progress
-		
+
 		# Case 2: The other car is on the next chosen segment.
 		elif car.chosen_next_segment != null and other_car.segment == car.chosen_next_segment:
 			var remaining_dist_on_current_seg = car.segment.curve.get_baked_length() - car.progress
 			dist = remaining_dist_on_current_seg + other_car.progress
-		
+
 		# If we found a car in front of us and it's closer than the previous one
 		if dist >= 0 and dist < min_dist:
 			min_dist = dist
@@ -344,28 +344,26 @@ func _get_speed_for_forward_obstacle(car: Dictionary) -> float:
 	if car_in_front == null:
 		return car.base_speed
 
-	# --- 3. Calculate a safe speed based on distance ---
+	# --- 3. Calculate a safe speed based on distance to the car in front ---
 	var current_car_length = car.config.get("bounding_box_size", Vector3.ZERO).z
 	var front_car_length = car_in_front.config.get("bounding_box_size", Vector3.ZERO).z
-	
-	var safe_distance = (current_car_length / 2.0) + (front_car_length / 2.0) + vehicle_spacing
-	var detection_range = safe_distance * 2.5
 
-	# MODIFIED: If the car in front is stopped (current_speed is near zero)
-	# and we are within the safe distance, we must also stop completely.
-	if car_in_front.current_speed < 0.1 and min_dist <= safe_distance:
+	# MODIFIED: This logic has been refactored for a more robust and immediate stop.
+	var safe_distance = (current_car_length / 2.0) + (front_car_length / 2.0) + vehicle_spacing
+	var detection_range = safe_distance * 2.5 # The range at which we start slowing down.
+
+	# If the car in front is within the minimum safe distance, we must stop completely.
+	if min_dist <= safe_distance:
 		return 0.0
 
+	# If the car is outside the detection range, it can drive at its normal speed.
 	if min_dist > detection_range:
-		# Obstacle is too far away to matter.
 		return car.base_speed
-	elif min_dist <= safe_distance:
-		# We are too close. Reduce to -1 of the speed of the car in front to avoid collision.
-		return car_in_front.current_speed -1
+	
+	# If we are within the detection range but not yet at the safe distance,
+	# interpolate our speed between our base speed and the obstacle's speed.
+	# The closer we get, the more our speed will match the car in front.
 	else:
-		# We are within the detection range but not yet at the minimum safe distance.
-		# We interpolate our speed between our base speed and the obstacle's speed.
-		# The closer we get, the more our speed will match the car in front.
 		var t = inverse_lerp(safe_distance, detection_range, min_dist)
 		return lerp(car_in_front.current_speed, car.base_speed, t)
 
@@ -412,15 +410,23 @@ func _process(delta: float):
 		var target_speed: float
 		if _should_yield_at_intersection(car):
 			target_speed = 0.0
-			#stop quickly
+			# MODIFIED: When stopping for an intersection, also force current_speed to 0
+			# to prevent inching forward due to the lerp smoothing.
 			car.current_speed = 0.0
-			car.progress += 0.0
 		else:
 			target_speed = _get_speed_for_forward_obstacle(car)
+
+		# NEW: Hard stop check. If the target speed is zero (because we are too close to another car),
+		# immediately set the current speed to zero to prevent overlap from the lerp delay.
+		if target_speed < 0.01:
+			car.current_speed = 0.0
+		else:
 			# Smoothly adjust the car's current speed towards its target speed.
 			car.current_speed = lerp(car.current_speed, target_speed, delta * 4.0)
-			car.progress += car.current_speed * delta
 		
+		# Apply movement based on the final calculated speed.
+		car.progress += car.current_speed * delta
+
 		# --- Segment Transition Logic ---
 		var curve_len = seg.curve.get_baked_length()
 		while car.progress > curve_len:
