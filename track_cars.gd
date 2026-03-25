@@ -91,7 +91,11 @@ func spawn_car():
 		"uturn_start_basis": Basis(),
 		"uturn_target_seg": null,
 		"uturn_target_offset": 0.0,
-		"chosen_next_segment": null
+		"chosen_next_segment": null,
+		# NEW: Overtaking state variables
+		"overtake_offset": 0.0,
+		"overtake_target_offset": 0.0,
+		"overtake_return_timer": 0.0
 	}
 	
 	active_vehicles.append(car_data)
@@ -189,12 +193,18 @@ func _unhandled_input(event):
 					dragged_car.segment = closest_seg
 					dragged_car.progress = best_progress
 					dragged_car.state = "driving"
+					# NEW: Reset overtake state when dragging
+					dragged_car.overtake_offset = 0.0
+					dragged_car.overtake_target_offset = 0.0
 					_pick_next_segment(dragged_car)
 				else:
 					dragged_car.node.global_position = drag_original_pos
 					dragged_car.segment = drag_original_segment
 					dragged_car.progress = drag_original_progress
 					dragged_car.state = "driving"
+					# NEW: Reset overtake state when dragging
+					dragged_car.overtake_offset = 0.0
+					dragged_car.overtake_target_offset = 0.0
 					_pick_next_segment(dragged_car)
 
 				dragged_car = null
@@ -231,6 +241,9 @@ func on_track_regenerated():
 			car.segment = best_seg
 			car.progress = best_progress
 			car.state = "driving"
+			# NEW: Reset overtake state when track regenerates
+			car.overtake_offset = 0.0
+			car.overtake_target_offset = 0.0
 			_pick_next_segment(car)
 		else:
 			car.segment = null
@@ -266,6 +279,20 @@ func _physics_process(delta: float):
 		var seg = car.segment
 		if not seg or not seg.curve: continue
 		
+		# --- NEW: Overtake Logic ---
+		# Reset overtake if not in an intersection
+		if not seg.is_intersection:
+			car.overtake_target_offset = 0.0
+			
+		# Smoothly interpolate the current offset towards the target
+		car.overtake_offset = move_toward(car.overtake_offset, car.overtake_target_offset, delta * 1.5)
+		
+		# If we reached the target offset and it's not 0, start a timer to return to the center
+		if car.overtake_target_offset != 0.0 and abs(car.overtake_offset - car.overtake_target_offset) < 0.01:
+			car.overtake_return_timer -= delta
+			if car.overtake_return_timer <= 0.0:
+				car.overtake_target_offset = 0.0
+
 		# Handle wait time after collisions.
 		if car.wait_time > 0.0:
 			car.wait_time -= delta
@@ -320,6 +347,11 @@ func _physics_process(delta: float):
 			var target_origin = target_transform.origin
 			target_origin.y += 0.05
 			
+			# NEW: Apply overtake offset laterally
+			if car.overtake_offset != 0.0:
+				var right_vec = target_transform.basis.x
+				target_origin += right_vec * car.overtake_offset
+			
 			var motion = target_origin - car.node.global_position
 			var collision = car.node.move_and_collide(motion)
 			
@@ -331,8 +363,24 @@ func _physics_process(delta: float):
 				
 				# If the dot product is negative, the surface normal is facing the car (frontal crash)
 				if forward.dot(hit_normal) < -0.2:
-					car.current_speed = -car.base_speed * 0.8
-					car.wait_time = randf_range(0.5, 1.5) 
+					var collider = collision.get_collider()
+					# NEW: Check if we are blocked by another car at a green light in an intersection
+					if collider and collider.has_method("has_meta") and collider.has_meta("is_car") and seg.is_intersection and not seg.is_red_light:
+						# MODIFIED: Dynamically determine which side is less blocked
+						var dir_to_collider = (collider.global_position - car.node.global_position).normalized()
+						var right_vec = car.node.global_transform.basis.x
+						
+						# If the blocking car is slightly to our right, we should steer left. Otherwise, steer right.
+						if dir_to_collider.dot(right_vec) > 0.0:
+							car.overtake_target_offset = -0.4 # Shift left
+						else:
+							car.overtake_target_offset = 0.4  # Shift right
+							
+						car.overtake_return_timer = 1.5 # Stay offset for 1.5 seconds before returning
+						# Do not bounce back, keep pushing forward/sideways
+					else:
+						car.current_speed = -car.base_speed * 0.8
+						car.wait_time = randf_range(0.5, 1.5) 
 							
 			# Sync progress to actual physical position.
 			car.progress = seg.curve.get_closest_offset(car.node.global_position)
@@ -379,6 +427,9 @@ func _start_uturn(car: Dictionary):
 		car.uturn_target_seg = best_seg
 		car.uturn_target_offset = best_offset
 		car.wait_time = 0.0 
+		# NEW: Reset overtake state
+		car.overtake_offset = 0.0
+		car.overtake_target_offset = 0.0
 	else:
 		car.node.rotate_y(PI)
 		car.progress = max(0.0, car.progress - 0.1)
