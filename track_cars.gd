@@ -294,18 +294,22 @@ func _physics_process(delta: float):
 					var dir_to_other = to_other / dist
 					# Check if the other car is in front (dot product > 0.7 means ~45 degrees)
 					if forward.dot(dir_to_other) > 0.7:
-						# Check lateral distance to ensure they are in the same lane/path
-						var lateral_dist = abs(car.node.global_transform.basis.x.dot(to_other))
-						if lateral_dist < 0.6:
-							car_ahead_detected = true
-							var gap = dist - vehicle_spacing
-							if gap <= 0.0:
-								# Too close, force stop to maintain spacing
-								target_speed = 0.0
-							else:
-								# Smoothly reduce speed as gap closes to match the car ahead
-								var allowed_speed = gap * 1.5
-								target_speed = min(target_speed, other_car.current_speed + allowed_speed)
+						# NEW: Ensure the other car is facing roughly the same direction.
+						# This prevents detecting cars in the opposite lane coming towards us.
+						var other_forward = -other_car.node.global_transform.basis.z
+						if forward.dot(other_forward) > 0.5:
+							# Check lateral distance to ensure they are in the same lane/path
+							var lateral_dist = abs(car.node.global_transform.basis.x.dot(to_other))
+							if lateral_dist < 0.6:
+								car_ahead_detected = true
+								var gap = dist - vehicle_spacing
+								if gap <= 0.0:
+									# Too close, force stop to maintain spacing
+									target_speed = 0.0
+								else:
+									# Smoothly reduce speed as gap closes to match the car ahead
+									var allowed_speed = gap * 1.5
+									target_speed = min(target_speed, other_car.current_speed + allowed_speed)
 			
 			if car_ahead_detected:
 				# Brake or adjust speed to maintain spacing
