@@ -2,7 +2,7 @@ extends Node3D
 
 # --- Config ---
 @export var vehicle_speed: float = 2.0
-@export var vehicle_spacing: float = 2.0
+@export var vehicle_spacing: float = 0.5
 
 # NEW: Variable to control how far from the red light the cars should stop
 @export var stop_distance_from_light: float = 0.5
@@ -16,25 +16,25 @@ extends Node3D
 var vehicle_models =[
 	{
 		"path": "res://models/car-kit/ambulance.glb",
-		"scale": 0.2,
+		"scale": 0.15,
 		"initial_rotation_degrees": Vector3(0, 180, 0),
 		"bounding_box_size": Vector3(1.2, 2, 3.5) 
 	},
 	{
 		"path": "res://models/car-kit/delivery.glb",
-		"scale": 0.2,
+		"scale": 0.15,
 		"initial_rotation_degrees": Vector3(0, 180, 0),
 		"bounding_box_size": Vector3(1.2, 2, 3.5) 
 	},
 	{
 		"path": "res://models/car-kit/firetruck.glb",
-		"scale": 0.2,
+		"scale": 0.15,
 		"initial_rotation_degrees": Vector3(0, 180, 0),
 		"bounding_box_size": Vector3(1.2, 2, 3.5) 
 	},
 	{
 		"path": "res://models/car-kit/suv.glb",
-		"scale": 0.2,
+		"scale": 0.15,
 		"initial_rotation_degrees": Vector3(0, 180, 0),
 		"bounding_box_size": Vector3(1.2, 2, 3.5) 
 	}
@@ -91,11 +91,8 @@ func spawn_car():
 		"uturn_start_basis": Basis(),
 		"uturn_target_seg": null,
 		"uturn_target_offset": 0.0,
-		"chosen_next_segment": null,
-		# NEW: Overtaking state variables
-		"overtake_offset": 0.0,
-		"overtake_target_offset": 0.0,
-		"overtake_return_timer": 0.0
+		"chosen_next_segment": null
+		# MODIFIED: Removed overtake state variables
 	}
 	
 	active_vehicles.append(car_data)
@@ -193,18 +190,14 @@ func _unhandled_input(event):
 					dragged_car.segment = closest_seg
 					dragged_car.progress = best_progress
 					dragged_car.state = "driving"
-					# NEW: Reset overtake state when dragging
-					dragged_car.overtake_offset = 0.0
-					dragged_car.overtake_target_offset = 0.0
+					# MODIFIED: Removed overtake state reset
 					_pick_next_segment(dragged_car)
 				else:
 					dragged_car.node.global_position = drag_original_pos
 					dragged_car.segment = drag_original_segment
 					dragged_car.progress = drag_original_progress
 					dragged_car.state = "driving"
-					# NEW: Reset overtake state when dragging
-					dragged_car.overtake_offset = 0.0
-					dragged_car.overtake_target_offset = 0.0
+					# MODIFIED: Removed overtake state reset
 					_pick_next_segment(dragged_car)
 
 				dragged_car = null
@@ -241,9 +234,7 @@ func on_track_regenerated():
 			car.segment = best_seg
 			car.progress = best_progress
 			car.state = "driving"
-			# NEW: Reset overtake state when track regenerates
-			car.overtake_offset = 0.0
-			car.overtake_target_offset = 0.0
+			# MODIFIED: Removed overtake state reset
 			_pick_next_segment(car)
 		else:
 			car.segment = null
@@ -279,26 +270,49 @@ func _physics_process(delta: float):
 		var seg = car.segment
 		if not seg or not seg.curve: continue
 		
-		# --- NEW: Overtake Logic ---
-		# Reset overtake if not in an intersection
-		if not seg.is_intersection:
-			car.overtake_target_offset = 0.0
-			
-		# Smoothly interpolate the current offset towards the target
-		car.overtake_offset = move_toward(car.overtake_offset, car.overtake_target_offset, delta * 1.5)
-		
-		# If we reached the target offset and it's not 0, start a timer to return to the center
-		if car.overtake_target_offset != 0.0 and abs(car.overtake_offset - car.overtake_target_offset) < 0.01:
-			car.overtake_return_timer -= delta
-			if car.overtake_return_timer <= 0.0:
-				car.overtake_target_offset = 0.0
+		# MODIFIED: Removed Overtake Logic block from here
 
 		# Handle wait time after collisions.
 		if car.wait_time > 0.0:
 			car.wait_time -= delta
 			car.current_speed = move_toward(car.current_speed, 0.0, delta * 5.0)
 		else:
-			car.current_speed = move_toward(car.current_speed, car.base_speed, delta * 5.0)
+			# MODIFIED: Adaptive Cruise Control (ACC) to maintain vehicle_spacing
+			var forward = -car.node.global_transform.basis.z
+			var target_speed = car.base_speed
+			var car_ahead_detected = false
+			
+			for other_car in active_vehicles:
+				if other_car == car: continue
+				if other_car.state == "dragged": continue
+				
+				var to_other = other_car.node.global_position - car.node.global_position
+				var dist = to_other.length()
+				
+				# Only check cars within a reasonable detection radius
+				if dist < vehicle_spacing + 3.0:
+					var dir_to_other = to_other / dist
+					# Check if the other car is in front (dot product > 0.7 means ~45 degrees)
+					if forward.dot(dir_to_other) > 0.7:
+						# Check lateral distance to ensure they are in the same lane/path
+						var lateral_dist = abs(car.node.global_transform.basis.x.dot(to_other))
+						if lateral_dist < 0.6:
+							car_ahead_detected = true
+							var gap = dist - vehicle_spacing
+							if gap <= 0.0:
+								# Too close, force stop to maintain spacing
+								target_speed = 0.0
+							else:
+								# Smoothly reduce speed as gap closes to match the car ahead
+								var allowed_speed = gap * 1.5
+								target_speed = min(target_speed, other_car.current_speed + allowed_speed)
+			
+			if car_ahead_detected:
+				# Brake or adjust speed to maintain spacing
+				car.current_speed = move_toward(car.current_speed, target_speed, delta * 10.0)
+			else:
+				# Normal acceleration
+				car.current_speed = move_toward(car.current_speed, car.base_speed, delta * 5.0)
 		
 		var step = car.current_speed * delta
 		var projected_progress = car.progress + step
@@ -347,10 +361,7 @@ func _physics_process(delta: float):
 			var target_origin = target_transform.origin
 			target_origin.y += 0.05
 			
-			# NEW: Apply overtake offset laterally
-			if car.overtake_offset != 0.0:
-				var right_vec = target_transform.basis.x
-				target_origin += right_vec * car.overtake_offset
+			# MODIFIED: Removed overtake lateral offset application
 			
 			var motion = target_origin - car.node.global_position
 			var collision = car.node.move_and_collide(motion)
@@ -363,24 +374,9 @@ func _physics_process(delta: float):
 				
 				# If the dot product is negative, the surface normal is facing the car (frontal crash)
 				if forward.dot(hit_normal) < -0.2:
-					var collider = collision.get_collider()
-					# NEW: Check if we are blocked by another car at a green light in an intersection
-					if collider and collider.has_method("has_meta") and collider.has_meta("is_car") and seg.is_intersection and not seg.is_red_light:
-						# MODIFIED: Dynamically determine which side is less blocked
-						var dir_to_collider = (collider.global_position - car.node.global_position).normalized()
-						var right_vec = car.node.global_transform.basis.x
-						
-						# If the blocking car is slightly to our right, we should steer left. Otherwise, steer right.
-						if dir_to_collider.dot(right_vec) > 0.0:
-							car.overtake_target_offset = -0.4 # Shift left
-						else:
-							car.overtake_target_offset = 0.4  # Shift right
-							
-						car.overtake_return_timer = 1.5 # Stay offset for 1.5 seconds before returning
-						# Do not bounce back, keep pushing forward/sideways
-					else:
-						car.current_speed = -car.base_speed * 0.8
-						car.wait_time = randf_range(0.5, 1.5) 
+					# MODIFIED: Reverted to original collision fallback, removed overtake behavior
+					car.current_speed = -car.base_speed * 0.8
+					car.wait_time = randf_range(0.5, 1.5) 
 							
 			# Sync progress to actual physical position.
 			car.progress = seg.curve.get_closest_offset(car.node.global_position)
@@ -427,9 +423,7 @@ func _start_uturn(car: Dictionary):
 		car.uturn_target_seg = best_seg
 		car.uturn_target_offset = best_offset
 		car.wait_time = 0.0 
-		# NEW: Reset overtake state
-		car.overtake_offset = 0.0
-		car.overtake_target_offset = 0.0
+		# MODIFIED: Removed overtake state reset
 	else:
 		car.node.rotate_y(PI)
 		car.progress = max(0.0, car.progress - 0.1)
