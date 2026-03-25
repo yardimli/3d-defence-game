@@ -327,8 +327,15 @@ func _physics_process(delta: float):
 			var collision = car.node.move_and_collide(motion)
 			
 			if collision:
-				car.current_speed = -car.base_speed * 0.8
-				car.wait_time = randf_range(0.5, 1.5) 
+				# MODIFIED: Only trigger the crash response if the collision is in front of the car.
+				# This prevents the car from stopping when hit from behind or the side on corners.
+				var forward = -car.node.global_transform.basis.z
+				var hit_normal = collision.get_normal()
+				
+				# If the dot product is negative, the surface normal is facing the car (frontal crash)
+				if forward.dot(hit_normal) < -0.2:
+					car.current_speed = -car.base_speed * 0.8
+					car.wait_time = randf_range(0.5, 1.5) 
 							
 			# Sync progress to actual physical position.
 			car.progress = seg.curve.get_closest_offset(car.node.global_position)
