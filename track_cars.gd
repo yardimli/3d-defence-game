@@ -2,10 +2,10 @@ extends Node3D
 
 # --- Config ---
 @export var vehicle_speed: float = 2.0
-@export var vehicle_spacing: float = 5.0
+@export var vehicle_spacing: float = 2.0
 
 # NEW: Variable to control how far from the red light the cars should stop
-@export var stop_distance_from_light: float = 0.8
+@export var stop_distance_from_light: float = 0.5
 
 # Global flag to draw debug bounding boxes for all spawned cars.
 # This can be enabled from the Godot Editor's Inspector panel.
@@ -287,13 +287,10 @@ func _physics_process(delta: float):
 			
 		if next_seg != null and next_seg.is_red_light:
 			var stop_point = max(0.0, curve_len - stop_distance_from_light)
-			# Only clamp if we are approaching the stop point
-			if car.progress <= stop_point and projected_progress > stop_point:
-				projected_progress = stop_point
-				car.current_speed = 0.0
-			# If already past the early stop point, at least stop exactly at the intersection line
-			elif car.progress > stop_point and projected_progress > curve_len:
-				projected_progress = curve_len
+			if projected_progress > stop_point and car.progress < curve_len:
+				# MODIFIED: Clamp projected_progress to stop_point, or to current progress if already past it.
+				# This prevents creeping forward due to floating point inaccuracies.
+				projected_progress = min(projected_progress, max(car.progress, stop_point))
 				car.current_speed = 0.0
 
 		while projected_progress > curve_len:

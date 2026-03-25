@@ -44,17 +44,15 @@ var mat_green: StandardMaterial3D
 var mat_red: StandardMaterial3D
 var intersections: Array[TrafficIntersection] =[]
 
-# NEW: Class to manage a single intersection's traffic lights
+# MODIFIED: Class to manage a single intersection's traffic lights
 class TrafficIntersection extends RefCounted:
 	var grid_pos: Vector2
-	var phase: int = 0 # 0: Z-Axis Green, 1: All Red, 2: X-Axis Green, 3: All Red
+	var phase: int = 0 # Even numbers = Green for a specific entry, Odd numbers = All Red
 	var timer: float = 0.0
 	
-	var z_segments: Array[TrackSegment] =[]
-	var x_segments: Array[TrackSegment] = []
-	
-	var z_visuals: Array[MeshInstance3D] =[]
-	var x_visuals: Array[MeshInstance3D] =[]
+	# NEW: Store entries dynamically to allow one-by-one green lights
+	# Each dictionary contains: {"dir": Vector3, "segments": Array[TrackSegment], "visuals": Array[MeshInstance3D]}
+	var entries: Array[Dictionary] =[]
 
 # MODIFIED: TrackSegment now holds its own curve, a list of connected next segments, intersection data, and a color for visualization.
 class TrackSegment extends RefCounted:
@@ -98,33 +96,29 @@ func initialize(editor: Node3D):
 		
 	generate_tracks()
 
-# NEW: Process loop to manage traffic light timings
+# MODIFIED: Process loop to manage traffic light timings sequentially for each direction
 func _process(delta: float):
 	if intersections.is_empty(): return
 	
 	for inter in intersections:
 		inter.timer += delta
 		var phase_changed = false
+		var num_entries = inter.entries.size()
 		
-		# Cycle through the 4 phases: Z Green -> All Red -> X Green -> All Red
-		if inter.phase == 0: 
+		if num_entries == 0: continue
+		
+		# Cycle through phases dynamically based on number of entries
+		# Phase 0: Entry 0 Green, Phase 1: All Red, Phase 2: Entry 1 Green, Phase 3: All Red, etc.
+		var is_green_phase = (inter.phase % 2 == 0)
+		
+		if is_green_phase:
 			if inter.timer >= traffic_light_green_duration:
-				inter.phase = 1
+				inter.phase = (inter.phase + 1) % (num_entries * 2)
 				inter.timer = 0.0
 				phase_changed = true
-		elif inter.phase == 1: 
+		else:
 			if inter.timer >= traffic_light_all_red_duration:
-				inter.phase = 2
-				inter.timer = 0.0
-				phase_changed = true
-		elif inter.phase == 2: 
-			if inter.timer >= traffic_light_green_duration:
-				inter.phase = 3
-				inter.timer = 0.0
-				phase_changed = true
-		elif inter.phase == 3: 
-			if inter.timer >= traffic_light_all_red_duration:
-				inter.phase = 0
+				inter.phase = (inter.phase + 1) % (num_entries * 2)
 				inter.timer = 0.0
 				phase_changed = true
 				
@@ -259,33 +253,37 @@ func generate_tracks():
 		var intersection = TrafficIntersection.new()
 		intersection.grid_pos = g_pos
 		
-		# NEW: Randomize start phases and timers so they don't all sync up
-		if randomize_intersection_start_times:
-			intersection.phase = randi() % 4
-			if intersection.phase % 2 == 0:
-				intersection.timer = randf_range(0.0, traffic_light_green_duration)
-			else:
-				intersection.timer = randf_range(0.0, traffic_light_all_red_duration)
-		
+		# MODIFIED: Group segments by their incoming direction to allow sequential green lights
+		var entries_by_dir = {}
 		var processed_starts =[]
 		
 		for seg in segs:
-			# Determine if this entry is along the Z or X axis
-			var is_z_axis = abs(seg.start_dir.z) > 0.5
-			if is_z_axis:
-				intersection.z_segments.append(seg)
-			else:
-				intersection.x_segments.append(seg)
-				
+			var dir_key = seg.start_dir.snapped(Vector3(0.1, 0.1, 0.1))
+			if not entries_by_dir.has(dir_key):
+				entries_by_dir[dir_key] = {"segments": [], "visuals":[]}
+			
+			entries_by_dir[dir_key]["segments"].append(seg)
+			
 			# Create a visual light only once per entry point
 			var start_hash = str(snapped(seg.start_pos.x, 0.01)) + "_" + str(snapped(seg.start_pos.z, 0.01))
 			if not processed_starts.has(start_hash):
 				processed_starts.append(start_hash)
 				var light_mesh = _create_traffic_light(seg.start_pos, seg.start_dir)
-				if is_z_axis:
-					intersection.z_visuals.append(light_mesh)
+				entries_by_dir[dir_key]["visuals"].append(light_mesh)
+				
+		# Add all grouped entries to the intersection
+		for dir_key in entries_by_dir:
+			intersection.entries.append(entries_by_dir[dir_key])
+		
+		# NEW: Randomize start phases and timers so they don't all sync up
+		if randomize_intersection_start_times:
+			var num_entries = intersection.entries.size()
+			if num_entries > 0:
+				intersection.phase = randi() % (num_entries * 2)
+				if intersection.phase % 2 == 0:
+					intersection.timer = randf_range(0.0, traffic_light_green_duration)
 				else:
-					intersection.x_visuals.append(light_mesh)
+					intersection.timer = randf_range(0.0, traffic_light_all_red_duration)
 					
 		intersections.append(intersection)
 		_apply_intersection_phase(intersection) # Initialize the state
@@ -328,22 +326,24 @@ func generate_tracks():
 	
 	emit_signal("track_regenerated")
 
-# NEW: Helper to apply the current red/green state to segments and visuals
+# MODIFIED: Helper to apply the current red/green state to segments and visuals
 func _apply_intersection_phase(inter: TrafficIntersection):
-	var z_green = (inter.phase == 0)
-	var x_green = (inter.phase == 2)
+	var active_entry_index = -1
 	
-	for seg in inter.z_segments:
-		seg.is_red_light = not z_green
-	for seg in inter.x_segments:
-		seg.is_red_light = not x_green
+	# Determine which entry is currently green (if any)
+	if inter.phase % 2 == 0:
+		active_entry_index = inter.phase / 2
 		
-	for mi in inter.z_visuals:
-		if is_instance_valid(mi):
-			mi.material_override = mat_green if z_green else mat_red
-	for mi in inter.x_visuals:
-		if is_instance_valid(mi):
-			mi.material_override = mat_green if x_green else mat_red
+	for i in range(inter.entries.size()):
+		var entry = inter.entries[i]
+		var is_green = (i == active_entry_index)
+		
+		for seg in entry["segments"]:
+			seg.is_red_light = not is_green
+			
+		for mi in entry["visuals"]:
+			if is_instance_valid(mi):
+				mi.material_override = mat_green if is_green else mat_red
 
 # NEW: Helper to build the visual traffic light mesh
 func _create_traffic_light(pos: Vector3, dir: Vector3) -> MeshInstance3D:

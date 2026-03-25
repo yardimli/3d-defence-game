@@ -1,5 +1,9 @@
 TODO:
 
+simcity clone, when a space has roads on all sides show buttons R,C,I residential, commerical, industrial for zoneing
+when an area is zoned building should apear 
+for each building spawn one car that starts driving on the roads
+
 make the game a sandbox game
 
 draw two paralele tracks called A-track and B-track on top of the road tiles they should work with the corner, intersction etc tiles. in settings allow user to turn the A-track or B-track on or off
