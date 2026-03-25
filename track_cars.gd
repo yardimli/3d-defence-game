@@ -52,8 +52,6 @@ var drag_original_pos := Vector3.ZERO
 var drag_original_segment = null
 var drag_original_progress := 0.0
 
-# MODIFIED: Removed tile_x and tile_z as they are no longer needed for manual intersection BFS.
-
 func initialize(editor: Node3D, track_gen: Node3D, cam: Camera3D):
 	level_editor = editor
 	track_generator = track_gen
@@ -84,7 +82,7 @@ func spawn_car():
 		"base_speed": vehicle_speed * randf_range(0.8, 1.2),
 		"current_speed": 0.0,
 		"state": "driving",
-		"wait_time": 0.0,
+		"wait_time": 0.0, # Used for pausing after a collision
 		"uturn_timer": 0.0,
 		"uturn_start_pos": Vector3.ZERO,
 		"uturn_start_basis": Basis(),
@@ -96,7 +94,6 @@ func spawn_car():
 	active_vehicles.append(car_data)
 	_pick_next_segment(car_data)
 
-# MODIFIED: This function now creates a CharacterBody3D as the root node to utilize the physics engine.
 func _create_vehicle_instance() -> Dictionary:
 	if vehicle_models.is_empty():
 		return {}
@@ -108,39 +105,33 @@ func _create_vehicle_instance() -> Dictionary:
 		printerr("Failed to load car scene: ", car_config.path)
 		return {}
 		
-	# NEW: Create a CharacterBody3D as the root physics node
 	var physics_body = CharacterBody3D.new()
 	physics_body.set_meta("is_car", true)
 	
-	# Instantiate visual model and make it a child of the physics body
 	var car_visual = car_scene.instantiate()
 	var scale_factor = car_config.get("scale", 0.2)
 	car_visual.scale = Vector3.ONE * scale_factor
 	car_visual.rotation_degrees = car_config.get("initial_rotation_degrees", Vector3.ZERO)
 	physics_body.add_child(car_visual)
 	
-	# Create the collision shape
 	var shape = CollisionShape3D.new()
 	var box = BoxShape3D.new()
 	
-	# Scale the bounding box size by the model's scale factor
 	var bbox_size = car_config.get("bounding_box_size", Vector3(0.4, 0.4, 0.6)) * scale_factor
 	box.size = bbox_size
 	
 	shape.shape = box
-	shape.position.y = bbox_size.y / 2.0 # Center the box vertically
+	shape.position.y = bbox_size.y / 2.0 
 	physics_body.add_child(shape)
 	
-	# If the debug flag is on, create a visible mesh for the bounding box.
 	if draw_debug_bounding_boxes:
 		var debug_mesh_instance = MeshInstance3D.new()
 		var debug_mesh = BoxMesh.new()
-		debug_mesh.size = bbox_size # Match the collision shape size
+		debug_mesh.size = bbox_size 
 		debug_mesh_instance.mesh = debug_mesh
 		
-		# Create a semi-transparent material for the debug visual
 		var debug_material = StandardMaterial3D.new()
-		debug_material.albedo_color = Color(1.0, 0.0, 0.0, 0.4) # Red, 40% opaque
+		debug_material.albedo_color = Color(1.0, 0.0, 0.0, 0.4) 
 		debug_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		debug_mesh_instance.material_override = debug_material
 		
@@ -160,13 +151,12 @@ func _unhandled_input(event):
 			var end = origin + camera.project_ray_normal(mouse_pos) * 1000.0
 			var query = PhysicsRayQueryParameters3D.create(origin, end)
 			
-			# MODIFIED: Cars are now CharacterBody3D, so we check for bodies instead of areas.
 			query.collide_with_areas = false 
 			query.collide_with_bodies = true
 			var result = space_state.intersect_ray(query)
 			
 			if result and result.collider.has_meta("is_car"):
-				var car_node = result.collider # The collider is the CharacterBody3D itself
+				var car_node = result.collider 
 				for car in active_vehicles:
 					if car.node == car_node:
 						dragged_car = car
@@ -242,10 +232,6 @@ func on_track_regenerated():
 		else:
 			car.segment = null
 
-# MODIFIED: Removed manual intersection yielding and forward obstacle detection functions.
-# The physics engine will now handle collisions naturally.
-
-# MODIFIED: Changed _process to _physics_process to handle CharacterBody3D movement correctly.
 func _physics_process(delta: float):
 	for i in range(active_vehicles.size()):
 		var car = active_vehicles[i]
@@ -277,9 +263,15 @@ func _physics_process(delta: float):
 		var seg = car.segment
 		if not seg or not seg.curve: continue
 		
-		# NEW: Accelerate towards base speed. If the car bounced backward, this will smoothly
-		# slow it down and propel it forward again.
-		car.current_speed = move_toward(car.current_speed, car.base_speed, delta * 5.0)
+		# Handle wait time after collisions.
+		# If wait_time is active, decelerate to a stop. Otherwise, accelerate to base speed.
+		if car.wait_time > 0.0:
+			car.wait_time -= delta
+			# Smoothly decelerate to 0 while waiting (this creates the bounce-and-stop effect)
+			car.current_speed = move_toward(car.current_speed, 0.0, delta * 5.0)
+		else:
+			# Accelerate towards base speed.
+			car.current_speed = move_toward(car.current_speed, car.base_speed, delta * 5.0)
 		
 		var step = car.current_speed * delta
 		var projected_progress = car.progress + step
@@ -307,8 +299,7 @@ func _physics_process(delta: float):
 				_start_uturn(car)
 				break
 				
-		# NEW: Handle bouncing backward past the start of the current segment.
-		# This prevents the car from falling off the track backwards.
+		# Handle bouncing backward past the start of the current segment.
 		if projected_progress < 0.0:
 			projected_progress = 0.0
 			car.current_speed = 0.0
@@ -319,29 +310,21 @@ func _physics_process(delta: float):
 			var target_origin = target_transform.origin
 			target_origin.y += 0.05
 			
-			# NEW: Calculate motion vector and use the physics engine to move the car.
 			var motion = target_origin - car.node.global_position
 			var collision = car.node.move_and_collide(motion)
 			
-			# NEW: If a collision occurs, bounce the cars apart.
+			# MODIFIED: Only the car that initiates the collision (e.g., hitting from behind) gets the penalty.
+			# The other car is unaffected and will continue driving normally.
 			if collision:
 				# Reverse the current car's speed to bounce backwards.
 				car.current_speed = -car.base_speed * 0.8
-				
-				# Check if we hit another car and apply a bounce to it as well.
-				var collider = collision.get_collider()
-				if collider and collider.has_meta("is_car"):
-					for other_car in active_vehicles:
-						if other_car.node == collider:
-							other_car.current_speed = -other_car.base_speed * 0.8
-							break
+				# Set a random wait time to stop the car after bouncing.
+				car.wait_time = randf_range(0.5, 1.5) 
 							
-			# NEW: Sync progress to actual physical position. This ensures that if the car
-			# was stopped by a collision, its progress along the curve matches its actual location.
+			# Sync progress to actual physical position.
 			car.progress = seg.curve.get_closest_offset(car.node.global_position)
 			
 			# Update rotation to align the CharacterBody3D with the track.
-			# The visual child node handles its own model-specific rotation offset.
 			var actual_transform = seg.curve.sample_baked_with_rotation(car.progress, false, false)
 			car.node.global_transform.basis = actual_transform.basis
 
@@ -384,7 +367,7 @@ func _start_uturn(car: Dictionary):
 		car.uturn_start_basis = car.node.global_transform.basis
 		car.uturn_target_seg = best_seg
 		car.uturn_target_offset = best_offset
-		car.wait_time = 0.0
+		car.wait_time = 0.0 # Reset wait time if starting a U-turn
 	else:
 		# Fallback if no suitable U-turn segment is found (should be rare).
 		# Immediately rotate and try to reverse a little.
