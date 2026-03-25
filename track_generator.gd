@@ -19,6 +19,10 @@ signal track_regenerated
 # Default track color, used when alternating colors are disabled.
 @export var default_track_color: Color = Color(0.6, 0.6, 0.6) # Dark grey/black
 
+# NEW: Traffic Light Configuration
+@export var traffic_light_green_duration: float = 5.0
+@export var traffic_light_all_red_duration: float = 2.0
+
 # --- Dependencies ---
 var level_editor: Node3D
 var grid_data: Dictionary
@@ -33,6 +37,23 @@ var track_segments: Array[TrackSegment] =[]
 # Local segment definitions (at 0 degrees rotation)
 var local_segments = {}
 
+# NEW: Traffic Light Materials and State
+var mat_green: StandardMaterial3D
+var mat_red: StandardMaterial3D
+var intersections: Array[TrafficIntersection] =[]
+
+# NEW: Class to manage a single intersection's traffic lights
+class TrafficIntersection extends RefCounted:
+	var grid_pos: Vector2
+	var phase: int = 0 # 0: Z-Axis Green, 1: All Red, 2: X-Axis Green, 3: All Red
+	var timer: float = 0.0
+	
+	var z_segments: Array[TrackSegment] = []
+	var x_segments: Array[TrackSegment] = []
+	
+	var z_visuals: Array[MeshInstance3D] =[]
+	var x_visuals: Array[MeshInstance3D] =[]
+
 # MODIFIED: TrackSegment now holds its own curve, a list of connected next segments, intersection data, and a color for visualization.
 class TrackSegment extends RefCounted:
 	var start_pos: Vector3
@@ -44,9 +65,9 @@ class TrackSegment extends RefCounted:
 	var next_segments: Array[TrackSegment] =[]
 	var is_intersection: bool = false
 	var grid_pos: Vector2
-	# MODIFIED: Initialized with a default color and added a flag to track if it has been colored.
 	var color: Color = Color.BLACK
-	var is_colored: bool = false # NEW: Flag to track if the color has been intentionally set.
+	var is_colored: bool = false 
+	var is_red_light: bool = false # NEW: Flag to tell cars if they must stop before entering
 
 func initialize(editor: Node3D):
 	level_editor = editor
@@ -57,12 +78,56 @@ func initialize(editor: Node3D):
 	paths_container = Node3D.new()
 	add_child(paths_container)
 	
+	# NEW: Initialize traffic light materials
+	mat_green = StandardMaterial3D.new()
+	mat_green.albedo_color = Color(0, 1, 0)
+	mat_green.emission_enabled = true
+	mat_green.emission = Color(0, 1, 0)
+	
+	mat_red = StandardMaterial3D.new()
+	mat_red.albedo_color = Color(1, 0, 0)
+	mat_red.emission_enabled = true
+	mat_red.emission = Color(1, 0, 0)
+	
 	_init_local_segments()
 	
 	if level_editor.road_builder:
 		level_editor.road_builder.scene_modified.connect(generate_tracks)
 		
 	generate_tracks()
+
+# NEW: Process loop to manage traffic light timings
+func _process(delta: float):
+	if intersections.is_empty(): return
+	
+	for inter in intersections:
+		inter.timer += delta
+		var phase_changed = false
+		
+		# Cycle through the 4 phases: Z Green -> All Red -> X Green -> All Red
+		if inter.phase == 0: 
+			if inter.timer >= traffic_light_green_duration:
+				inter.phase = 1
+				inter.timer = 0.0
+				phase_changed = true
+		elif inter.phase == 1: 
+			if inter.timer >= traffic_light_all_red_duration:
+				inter.phase = 2
+				inter.timer = 0.0
+				phase_changed = true
+		elif inter.phase == 2: 
+			if inter.timer >= traffic_light_green_duration:
+				inter.phase = 3
+				inter.timer = 0.0
+				phase_changed = true
+		elif inter.phase == 3: 
+			if inter.timer >= traffic_light_all_red_duration:
+				inter.phase = 0
+				inter.timer = 0.0
+				phase_changed = true
+				
+		if phase_changed:
+			_apply_intersection_phase(inter)
 
 func _init_local_segments():
 	var d = lane_offset
@@ -135,7 +200,7 @@ func _get_road_type(model_path: String) -> String:
 	if "road-crossroad" in model_path: return "crossroad"
 	return ""
 
-# MODIFIED: Generates the track graph, assigns colors for debugging, and handles the visualization toggle.
+# MODIFIED: Generates the track graph, assigns colors for debugging, and sets up traffic lights.
 func generate_tracks():
 	track_segments.clear()
 	for child in paths_container.get_children():
@@ -178,27 +243,59 @@ func generate_tracks():
 				
 	track_segments = all_segments
 	
+	# NEW: Setup Traffic Lights for Intersections
+	intersections.clear()
+	var grid_segments = {}
+	for seg in all_segments:
+		if seg.is_intersection:
+			if not grid_segments.has(seg.grid_pos):
+				grid_segments[seg.grid_pos] = []
+			grid_segments[seg.grid_pos].append(seg)
+			
+	for g_pos in grid_segments:
+		var segs = grid_segments[g_pos]
+		var intersection = TrafficIntersection.new()
+		intersection.grid_pos = g_pos
+		
+		var processed_starts =[]
+		
+		for seg in segs:
+			# Determine if this entry is along the Z or X axis
+			var is_z_axis = abs(seg.start_dir.z) > 0.5
+			if is_z_axis:
+				intersection.z_segments.append(seg)
+			else:
+				intersection.x_segments.append(seg)
+				
+			# Create a visual light only once per entry point
+			var start_hash = str(snapped(seg.start_pos.x, 0.01)) + "_" + str(snapped(seg.start_pos.z, 0.01))
+			if not processed_starts.has(start_hash):
+				processed_starts.append(start_hash)
+				var light_mesh = _create_traffic_light(seg.start_pos, seg.start_dir)
+				if is_z_axis:
+					intersection.z_visuals.append(light_mesh)
+				else:
+					intersection.x_visuals.append(light_mesh)
+					
+		intersections.append(intersection)
+		_apply_intersection_phase(intersection) # Initialize the state
+	
 	# If visualization is turned off, stop here.
 	if not visualize_tracks:
 		emit_signal("track_regenerated")
 		return
 		
-	# MODIFIED: Logic now uses the `is_colored` flag instead of checking for null.
 	if use_alternating_colors:
-		# Iterate through all segments and color them and their neighbors.
-		# This ensures connected segments have different colors.
 		for seg in all_segments:
 			if not seg.is_colored:
-				seg.color = debug_color_a # Assign the first color if not yet colored.
+				seg.color = debug_color_a 
 				seg.is_colored = true
-			# Determine the color for neighbors based on the current segment's color.
 			var neighbor_color = debug_color_b if seg.color == debug_color_a else debug_color_a
 			for next_seg in seg.next_segments:
-				if not next_seg.is_colored: # Only color neighbors that haven't been colored.
+				if not next_seg.is_colored: 
 					next_seg.color = neighbor_color
 					next_seg.is_colored = true
 	else:
-		# If not using alternating colors, assign the default color to all segments.
 		for seg in all_segments:
 			seg.color = default_track_color
 			
@@ -206,14 +303,12 @@ func generate_tracks():
 	var st = SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	
-	# Create a material that uses vertex colors for the track lines.
 	var mat = StandardMaterial3D.new()
-	mat.vertex_color_use_as_albedo = true # This tells the material to use the colors we provide per vertex.
+	mat.vertex_color_use_as_albedo = true 
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	st.set_material(mat)
 	
 	for seg in all_segments:
-		# Pass the assigned color to the drawing function.
 		_add_curve_to_surfacetool(st, seg.curve, seg.color)
 		
 	var mesh = st.commit()
@@ -222,6 +317,50 @@ func generate_tracks():
 	paths_container.add_child(mi)
 	
 	emit_signal("track_regenerated")
+
+# NEW: Helper to apply the current red/green state to segments and visuals
+func _apply_intersection_phase(inter: TrafficIntersection):
+	var z_green = (inter.phase == 0)
+	var x_green = (inter.phase == 2)
+	
+	for seg in inter.z_segments:
+		seg.is_red_light = not z_green
+	for seg in inter.x_segments:
+		seg.is_red_light = not x_green
+		
+	for mi in inter.z_visuals:
+		if is_instance_valid(mi):
+			mi.material_override = mat_green if z_green else mat_red
+	for mi in inter.x_visuals:
+		if is_instance_valid(mi):
+			mi.material_override = mat_green if x_green else mat_red
+
+# NEW: Helper to build the visual traffic light mesh
+func _create_traffic_light(pos: Vector3, dir: Vector3) -> MeshInstance3D:
+	var pole = MeshInstance3D.new()
+	var cyl = CylinderMesh.new()
+	cyl.top_radius = 0.02
+	cyl.bottom_radius = 0.02
+	cyl.height = 0.4
+	pole.mesh = cyl
+	
+	var pole_mat = StandardMaterial3D.new()
+	pole_mat.albedo_color = Color(0.2, 0.2, 0.2)
+	pole.material_override = pole_mat
+	
+	# Position to the right of the entry lane
+	var right = dir.cross(Vector3.UP).normalized()
+	pole.position = pos + right * 0.25 + Vector3(0, 0.2, 0)
+	paths_container.add_child(pole)
+	
+	var light_box = MeshInstance3D.new()
+	var box = BoxMesh.new()
+	box.size = Vector3(0.08, 0.15, 0.08)
+	light_box.mesh = box
+	light_box.position = Vector3(0, 0.2, 0)
+	pole.add_child(light_box)
+	
+	return light_box # Return the box so we can change its material later
 
 func _build_curve_for_segment(seg: TrackSegment) -> Curve3D:
 	var curve = Curve3D.new()
@@ -259,7 +398,6 @@ func _build_curve_for_segment(seg: TrackSegment) -> Curve3D:
 		
 	return curve
 
-# Appends a curve's visual geometry to a shared SurfaceTool using a specified color.
 func _add_curve_to_surfacetool(st: SurfaceTool, curve: Curve3D, color: Color):
 	var points = curve.tessellate(5, 0.1)
 	if points.size() < 2: return
@@ -277,7 +415,6 @@ func _add_curve_to_surfacetool(st: SurfaceTool, curve: Curve3D, color: Color):
 		var v3 = p2 + left + Vector3(0, 0.05, 0)
 		var v4 = p2 - left + Vector3(0, 0.05, 0)
 		
-		# Set color before adding each vertex for the first triangle.
 		st.set_color(color)
 		st.set_normal(up)
 		st.add_vertex(v1)
@@ -288,7 +425,6 @@ func _add_curve_to_surfacetool(st: SurfaceTool, curve: Curve3D, color: Color):
 		st.set_normal(up)
 		st.add_vertex(v3)
 		
-		# Set color before adding each vertex for the second triangle.
 		st.set_color(color)
 		st.set_normal(up)
 		st.add_vertex(v2)

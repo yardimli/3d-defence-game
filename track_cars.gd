@@ -264,13 +264,10 @@ func _physics_process(delta: float):
 		if not seg or not seg.curve: continue
 		
 		# Handle wait time after collisions.
-		# If wait_time is active, decelerate to a stop. Otherwise, accelerate to base speed.
 		if car.wait_time > 0.0:
 			car.wait_time -= delta
-			# Smoothly decelerate to 0 while waiting (this creates the bounce-and-stop effect)
 			car.current_speed = move_toward(car.current_speed, 0.0, delta * 5.0)
 		else:
-			# Accelerate towards base speed.
 			car.current_speed = move_toward(car.current_speed, car.base_speed, delta * 5.0)
 		
 		var step = car.current_speed * delta
@@ -281,15 +278,21 @@ func _physics_process(delta: float):
 		while projected_progress > curve_len:
 			if curve_len <= 0.001: break
 				
-			if car.chosen_next_segment != null:
+			# MODIFIED: Check for red lights before transitioning to the next segment
+			var next_seg = car.chosen_next_segment
+			if next_seg == null and seg.next_segments.size() > 0:
+				next_seg = seg.next_segments.pick_random()
+				car.chosen_next_segment = next_seg
+				
+			if next_seg != null:
+				# Check if the upcoming segment has a red light
+				if next_seg.is_red_light:
+					projected_progress = curve_len
+					car.current_speed = 0.0
+					break # Stop at the end of the current segment and wait
+					
 				projected_progress -= curve_len
-				seg = car.chosen_next_segment
-				car.segment = seg
-				curve_len = seg.curve.get_baked_length()
-				_pick_next_segment(car)
-			elif seg.next_segments.size() > 0:
-				projected_progress -= curve_len
-				seg = seg.next_segments.pick_random()
+				seg = next_seg
 				car.segment = seg
 				curve_len = seg.curve.get_baked_length()
 				_pick_next_segment(car)
@@ -313,12 +316,8 @@ func _physics_process(delta: float):
 			var motion = target_origin - car.node.global_position
 			var collision = car.node.move_and_collide(motion)
 			
-			# MODIFIED: Only the car that initiates the collision (e.g., hitting from behind) gets the penalty.
-			# The other car is unaffected and will continue driving normally.
 			if collision:
-				# Reverse the current car's speed to bounce backwards.
 				car.current_speed = -car.base_speed * 0.8
-				# Set a random wait time to stop the car after bouncing.
 				car.wait_time = randf_range(0.5, 1.5) 
 							
 			# Sync progress to actual physical position.
@@ -343,17 +342,15 @@ func _start_uturn(car: Dictionary):
 	var best_offset = 0.0
 	var car_fwd = -car.node.global_transform.basis.z
 	
-	# Find the nearest valid segment behind the car to turn around onto.
 	for seg in track_generator.track_segments:
 		var closest_pt = seg.curve.get_closest_point(car.node.global_position)
 		var dist = closest_pt.distance_to(car.node.global_position)
 		
-		if dist < 1.0: # Search within a reasonable radius.
+		if dist < 1.0: 
 			var offset = seg.curve.get_closest_offset(car.node.global_position)
 			var xform = seg.curve.sample_baked_with_rotation(offset, false, false)
 			var seg_fwd = -xform.basis.z
 			
-			# Ensure the target segment is facing the opposite direction.
 			if seg_fwd.dot(car_fwd) < -0.5:
 				if dist < min_dist:
 					min_dist = dist
@@ -367,10 +364,8 @@ func _start_uturn(car: Dictionary):
 		car.uturn_start_basis = car.node.global_transform.basis
 		car.uturn_target_seg = best_seg
 		car.uturn_target_offset = best_offset
-		car.wait_time = 0.0 # Reset wait time if starting a U-turn
+		car.wait_time = 0.0 
 	else:
-		# Fallback if no suitable U-turn segment is found (should be rare).
-		# Immediately rotate and try to reverse a little.
 		car.node.rotate_y(PI)
 		car.progress = max(0.0, car.progress - 0.1)
 		car.wait_time = 0.0
