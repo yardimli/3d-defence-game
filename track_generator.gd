@@ -22,6 +22,8 @@ signal track_regenerated
 # NEW: Traffic Light Configuration
 @export var traffic_light_green_duration: float = 5.0
 @export var traffic_light_all_red_duration: float = 2.0
+# NEW: Variable to randomize start times so intersections don't sync perfectly
+@export var randomize_intersection_start_times: bool = true
 
 # --- Dependencies ---
 var level_editor: Node3D
@@ -48,7 +50,7 @@ class TrafficIntersection extends RefCounted:
 	var phase: int = 0 # 0: Z-Axis Green, 1: All Red, 2: X-Axis Green, 3: All Red
 	var timer: float = 0.0
 	
-	var z_segments: Array[TrackSegment] = []
+	var z_segments: Array[TrackSegment] =[]
 	var x_segments: Array[TrackSegment] = []
 	
 	var z_visuals: Array[MeshInstance3D] =[]
@@ -249,13 +251,21 @@ func generate_tracks():
 	for seg in all_segments:
 		if seg.is_intersection:
 			if not grid_segments.has(seg.grid_pos):
-				grid_segments[seg.grid_pos] = []
+				grid_segments[seg.grid_pos] =[]
 			grid_segments[seg.grid_pos].append(seg)
 			
 	for g_pos in grid_segments:
 		var segs = grid_segments[g_pos]
 		var intersection = TrafficIntersection.new()
 		intersection.grid_pos = g_pos
+		
+		# NEW: Randomize start phases and timers so they don't all sync up
+		if randomize_intersection_start_times:
+			intersection.phase = randi() % 4
+			if intersection.phase % 2 == 0:
+				intersection.timer = randf_range(0.0, traffic_light_green_duration)
+			else:
+				intersection.timer = randf_range(0.0, traffic_light_all_red_duration)
 		
 		var processed_starts =[]
 		

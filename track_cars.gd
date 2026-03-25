@@ -4,6 +4,9 @@ extends Node3D
 @export var vehicle_speed: float = 2.0
 @export var vehicle_spacing: float = 5.0
 
+# NEW: Variable to control how far from the red light the cars should stop
+@export var stop_distance_from_light: float = 0.8
+
 # Global flag to draw debug bounding boxes for all spawned cars.
 # This can be enabled from the Godot Editor's Inspector panel.
 @export var draw_debug_bounding_boxes: bool = false
@@ -275,22 +278,29 @@ func _physics_process(delta: float):
 
 		# --- Segment Transition Logic ---
 		var curve_len = seg.curve.get_baked_length()
+		
+		# MODIFIED: Check for red lights and stop before the intersection based on stop_distance_from_light
+		var next_seg = car.chosen_next_segment
+		if next_seg == null and seg.next_segments.size() > 0:
+			next_seg = seg.next_segments.pick_random()
+			car.chosen_next_segment = next_seg
+			
+		if next_seg != null and next_seg.is_red_light:
+			var stop_point = max(0.0, curve_len - stop_distance_from_light)
+			# Only clamp if we are approaching the stop point
+			if car.progress <= stop_point and projected_progress > stop_point:
+				projected_progress = stop_point
+				car.current_speed = 0.0
+			# If already past the early stop point, at least stop exactly at the intersection line
+			elif car.progress > stop_point and projected_progress > curve_len:
+				projected_progress = curve_len
+				car.current_speed = 0.0
+
 		while projected_progress > curve_len:
 			if curve_len <= 0.001: break
-				
-			# MODIFIED: Check for red lights before transitioning to the next segment
-			var next_seg = car.chosen_next_segment
-			if next_seg == null and seg.next_segments.size() > 0:
-				next_seg = seg.next_segments.pick_random()
-				car.chosen_next_segment = next_seg
-				
+			
+			next_seg = car.chosen_next_segment
 			if next_seg != null:
-				# Check if the upcoming segment has a red light
-				if next_seg.is_red_light:
-					projected_progress = curve_len
-					car.current_speed = 0.0
-					break # Stop at the end of the current segment and wait
-					
 				projected_progress -= curve_len
 				seg = next_seg
 				car.segment = seg
