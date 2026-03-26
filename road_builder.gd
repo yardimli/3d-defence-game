@@ -40,6 +40,12 @@ func place_road(grid_pos: Vector2):
 	# MODIFIED: Prevent placing outside bounds
 	if not level_editor._is_within_terrain_bounds(grid_pos):
 		return
+	
+	# NEW: Check if placing a road here would create a 2x2 block of roads,
+	# which prevents parallel roads without a gap.
+	if _forms_a_block(grid_pos):
+		print("Cannot place road: would create parallel roads without a gap.")
+		return
 		
 	# Prevent placing a road on top of an existing road piece.
 	if _is_road_at(grid_pos):
@@ -77,6 +83,51 @@ func get_road_node_at(grid_pos: Vector2) -> Node3D:
 	return _get_road_node_at(grid_pos)
 
 # --- Internal Logic ---
+
+# NEW: A function to check if placing a road at the given position
+# would complete a 2x2 block of road tiles. This is used to enforce
+# the rule that parallel roads must have at least one empty tile between them.
+func _forms_a_block(grid_pos: Vector2) -> bool:
+	var tile_size = Vector2(level_editor.tile_x, level_editor.tile_z)
+	
+	# Define relative positions for checking 2x2 squares
+	var up = Vector2(0, -tile_size.y)
+	var down = Vector2(0, tile_size.y)
+	var left = Vector2(-tile_size.x, 0)
+	var right = Vector2(tile_size.x, 0)
+	
+	# Check the 4 possible 2x2 squares that the new road could complete.
+	# The new road is at 'grid_pos'. We check the 3 other tiles that would form a square with it.
+	
+	# Case 1: grid_pos is the bottom-right tile of a 2x2 square.
+	# Check for roads at: up, left, up-left
+	if _is_road_at(grid_pos + up) and \
+	   _is_road_at(grid_pos + left) and \
+	   _is_road_at(grid_pos + up + left):
+		return true
+		
+	# Case 2: grid_pos is the bottom-left tile of a 2x2 square.
+	# Check for roads at: up, right, up-right
+	if _is_road_at(grid_pos + up) and \
+	   _is_road_at(grid_pos + right) and \
+	   _is_road_at(grid_pos + up + right):
+		return true
+		
+	# Case 3: grid_pos is the top-right tile of a 2x2 square.
+	# Check for roads at: down, left, down-left
+	if _is_road_at(grid_pos + down) and \
+	   _is_road_at(grid_pos + left) and \
+	   _is_road_at(grid_pos + down + left):
+		return true
+
+	# Case 4: grid_pos is the top-left tile of a 2x2 square.
+	# Check for roads at: down, right, down-right
+	if _is_road_at(grid_pos + down) and \
+	   _is_road_at(grid_pos + right) and \
+	   _is_road_at(grid_pos + down + right):
+		return true
+		
+	return false
 
 func _place_or_update_road_at(grid_pos: Vector2):
 	var neighbors = _get_road_neighbors(grid_pos)
