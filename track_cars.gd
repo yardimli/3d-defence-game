@@ -310,7 +310,7 @@ func _physics_process(delta: float):
 			var target_track_xform = car.uturn_target_seg.curve.sample_baked_with_rotation(car.uturn_target_offset, false, false)
 			var target_basis = target_track_xform.basis
 			var target_origin = target_track_xform.origin
-			target_origin.y += 0.05
+			# MODIFIED: Removed y-offset to prevent car from floating during a u-turn.
 			
 			car.node.global_position = car.uturn_start_pos.lerp(target_origin, t)
 			car.node.global_transform.basis = car.uturn_start_basis.slerp(target_basis, t)
@@ -426,7 +426,8 @@ func _physics_process(delta: float):
 		if car.state == "driving":
 			var target_transform = seg.curve.sample_baked_with_rotation(projected_progress, false, false)
 			var target_origin = target_transform.origin
-			target_origin.y += 0.05
+			# MODIFIED: Removed y-offset to prevent car from floating above the road.
+			# The car's position is now taken directly from the track curve.
 			
 			# MODIFIED: Removed overtake lateral offset application
 			

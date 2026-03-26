@@ -21,6 +21,10 @@ var allow_same_asset_stacking := false
 var current_scene_name: String = ""
 var is_modified := false
 var is_road_builder_enabled := false
+# NEW: State variables for new camera modes
+var is_demo_camera_active := false
+var is_follow_car_mode_active := false # True when button is pressed, waiting for click
+var is_following_car := false # True after a car has been clicked
 
 # NEW: Settings State
 var cloud_density := 0.5
@@ -52,6 +56,9 @@ var tree_density := 2.0 # percentage
 @onready var status_label: Label = %StatusLabel
 @onready var btn_road_builder: Button = %ButtonRoadBuilder
 @onready var btn_spawn_car: Button = %ButtonSpawnCar # NEW: Reference to the Spawn Car button
+# NEW: References to the new camera mode buttons
+@onready var btn_demo_camera: Button = %ButtonDemoCamera
+@onready var btn_follow_car: Button = %ButtonFollowCar
 
 # --- Materials ---
 var ghost_material: StandardMaterial3D
@@ -179,6 +186,10 @@ func _connect_ui_signals():
 	
 	# NEW: Connect the Spawn Car button to the track_cars module
 	btn_spawn_car.pressed.connect(track_cars.spawn_car)
+
+	# NEW: Connect signals for the new camera buttons
+	btn_demo_camera.toggled.connect(_on_demo_camera_toggled)
+	btn_follow_car.toggled.connect(_on_follow_car_toggled)
 
 func _on_model_selected(data: Dictionary):
 	if is_road_builder_enabled:
@@ -327,6 +338,47 @@ func _delete_model_at_cursor():
 # ==========================================
 # UI CALLBACKS
 # ==========================================
+# NEW: Toggles the automated demo camera mode
+func _on_demo_camera_toggled(button_pressed: bool):
+	if button_pressed:
+		# Turn on demo mode
+		is_demo_camera_active = true
+		# If follow car mode is active, turn it off
+		if btn_follow_car.button_pressed:
+			btn_follow_car.button_pressed = false
+		
+		camera_pivot.start_demo_mode()
+		status_label.text = "Demo Camera Active"
+	else:
+		# Turn off demo mode
+		is_demo_camera_active = false
+		camera_pivot.stop_automated_modes()
+		_update_status_label() # Restore original status label
+
+# NEW: Toggles the "follow car" mode
+func _on_follow_car_toggled(button_pressed: bool):
+	if button_pressed:
+		# Enter mode where we wait for user to click a car
+		is_follow_car_mode_active = true
+		is_following_car = false # Reset this flag
+		# If demo mode is active, turn it off
+		if btn_demo_camera.button_pressed:
+			btn_demo_camera.button_pressed = false
+			
+		status_label.text = "Follow Car Mode: Click on a car to follow."
+	else:
+		# Exit follow car mode completely
+		_stop_follow_mode()
+
+# NEW: Central function to stop all follow-car-related states
+func _stop_follow_mode():
+	is_follow_car_mode_active = false
+	is_following_car = false
+	if btn_follow_car.button_pressed:
+		btn_follow_car.button_pressed = false # Ensure button state is synced
+	camera_pivot.stop_automated_modes()
+	_update_status_label()
+
 func _on_road_builder_toggled():
 	is_road_builder_enabled = not is_road_builder_enabled
 	if is_road_builder_enabled:
@@ -399,6 +451,9 @@ func _mark_as_modified():
 		_update_status_label()
 
 func _update_status_label():
+	# MODIFIED: Don't update the status if a special camera mode is active
+	if is_demo_camera_active or is_follow_car_mode_active or is_following_car:
+		return
 	var file_text = current_scene_name if not current_scene_name.is_empty() else "Untitled"
 	var modified_star = " *" if is_modified else ""
 	status_label.text = file_text + modified_star
@@ -522,6 +577,12 @@ func _handle_right_click_delete(mouse_pos: Vector2) -> bool:
 
 
 func _unhandled_input(event):
+	# MODIFIED: Add a check for camera modes at the top
+	if is_demo_camera_active:
+		if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
+			btn_demo_camera.button_pressed = false # This will trigger the toggled signal
+		return # Block all other input during demo mode
+
 	var mouse_pos = get_viewport().get_mouse_position()
 	
 	if asset_selector.get_global_rect().has_point(mouse_pos) or \
@@ -531,12 +592,20 @@ func _unhandled_input(event):
 	(properties_panel.visible and properties_panel.get_global_rect().has_point(mouse_pos)):
 		return
 
+	# MODIFIED: Let the camera controller handle its input first, but respect our new modes
 	if camera_pivot.has_method("handle_input") and camera_pivot.handle_input(event):
 		get_viewport().set_input_as_handled()
-		return
+		# If we are following a car, we still want to process other inputs like escape
+		if not is_following_car:
+			return
 
 	if event is InputEventKey and event.pressed:
-		if event.keycode == KEY_ESCAPE: _deselect_model()
+		# MODIFIED: Escape key now also stops camera modes
+		if event.keycode == KEY_ESCAPE:
+			if is_follow_car_mode_active or is_following_car:
+				_stop_follow_mode()
+			else:
+				_deselect_model() # Original escape functionality
 		if event.keycode == KEY_R: _rotate_placement()
 		if event.keycode == KEY_D: _delete_model_at_cursor()
 		if event.keycode == KEY_C: _cycle_selection_on_tile()
@@ -561,6 +630,28 @@ func _unhandled_input(event):
 
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			if event.pressed:
+				# NEW: Handle clicking on a car when in follow mode
+				if is_follow_car_mode_active and not is_following_car:
+					var space_state = get_world_3d().direct_space_state
+					var origin = camera.project_ray_origin(mouse_pos)
+					var end = origin + camera.project_ray_normal(mouse_pos) * 1000.0
+					var query = PhysicsRayQueryParameters3D.create(origin, end)
+					query.collide_with_areas = false
+					query.collide_with_bodies = true
+					var result = space_state.intersect_ray(query)
+					
+					if result and result.collider.has_meta("is_car"):
+						var car_node = result.collider
+						is_following_car = true
+						is_follow_car_mode_active = false # We've selected a car, so we're no longer "waiting"
+						camera_pivot.start_follow_mode(car_node)
+						status_label.text = "Following Car. Use right-mouse to orbit. Press ESC to stop."
+						get_viewport().set_input_as_handled()
+					else:
+						# If user clicks on empty space, do nothing, just wait for a car click
+						status_label.text = "No car found at click position. Try again."
+					return # Prevent other click logic from running
+				
 				var click_grid_pos = _get_grid_pos_from_mouse(mouse_pos)
 				if click_grid_pos == Vector2.INF or not _is_within_terrain_bounds(click_grid_pos):
 					_deselect_instance()
