@@ -2,7 +2,7 @@ extends Node3D
 
 # --- Config ---
 @export var vehicle_speed: float = 2.0
-@export var vehicle_spacing: float = 1.0
+@export var vehicle_spacing: float = 0.75
 
 # NEW: Variable to control how far from the red light the cars should stop
 @export var stop_distance_from_light: float = 0.5
@@ -21,12 +21,6 @@ var vehicle_models =[
 		"bounding_box_size": Vector3(1.2, 2, 3.5) 
 	},
 	{
-		"path": "res://models/car-kit/delivery.glb",
-		"scale": 0.15,
-		"initial_rotation_degrees": Vector3(0, 180, 0),
-		"bounding_box_size": Vector3(1.2, 2, 3.5) 
-	},
-	{
 		"path": "res://models/car-kit/firetruck.glb",
 		"scale": 0.15,
 		"initial_rotation_degrees": Vector3(0, 180, 0),
@@ -37,7 +31,68 @@ var vehicle_models =[
 		"scale": 0.15,
 		"initial_rotation_degrees": Vector3(0, 180, 0),
 		"bounding_box_size": Vector3(1.2, 2, 3.5) 
+	},
+	{
+		"path": "res://models/car-kit/delivery.glb",
+		"scale": 0.15,
+		"initial_rotation_degrees": Vector3(0, 180, 0),
+		"bounding_box_size": Vector3(1.2, 2, 3.5) 
+	},
+	{
+		"path": "res://models/car-kit/delivery-flat.glb",
+		"scale": 0.15,
+		"initial_rotation_degrees": Vector3(0, 180, 0),
+		"bounding_box_size": Vector3(1.2, 2, 3.5) 
+	},
+	{
+		"path": "res://models/car-kit/garbage-truck.glb",
+		"scale": 0.15,
+		"initial_rotation_degrees": Vector3(0, 180, 0),
+		"bounding_box_size": Vector3(1.2, 2, 3.5) 
+	},
+	{
+		"path": "res://models/car-kit/hatchback-sports.glb",
+		"scale": 0.15,
+		"initial_rotation_degrees": Vector3(0, 180, 0),
+		"bounding_box_size": Vector3(1.2, 2, 3.5) 
+	},
+	{
+		"path": "res://models/car-kit/police.glb",
+		"scale": 0.15,
+		"initial_rotation_degrees": Vector3(0, 180, 0),
+		"bounding_box_size": Vector3(1.2, 2, 3.5) 
+	},
+	{
+		"path": "res://models/car-kit/sedan.glb",
+		"scale": 0.15,
+		"initial_rotation_degrees": Vector3(0, 180, 0),
+		"bounding_box_size": Vector3(1.2, 2, 3.5) 
+	},
+	{
+		"path": "res://models/car-kit/taxi.glb",
+		"scale": 0.15,
+		"initial_rotation_degrees": Vector3(0, 180, 0),
+		"bounding_box_size": Vector3(1.2, 2, 3.5) 
+	},
+	{
+		"path": "res://models/car-kit/truck-flat.glb",
+		"scale": 0.15,
+		"initial_rotation_degrees": Vector3(0, 180, 0),
+		"bounding_box_size": Vector3(1.2, 2, 3.5) 
+	},
+	{
+		"path": "res://models/car-kit/truck.glb",
+		"scale": 0.15,
+		"initial_rotation_degrees": Vector3(0, 180, 0),
+		"bounding_box_size": Vector3(1.2, 2, 3.5) 
+	},
+	{
+		"path": "res://models/car-kit/van.glb",
+		"scale": 0.15,
+		"initial_rotation_degrees": Vector3(0, 180, 0),
+		"bounding_box_size": Vector3(1.2, 2, 3.5) 
 	}
+
 ]
 
 

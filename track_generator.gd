@@ -39,9 +39,10 @@ var track_segments: Array[TrackSegment] =[]
 # Local segment definitions (at 0 degrees rotation)
 var local_segments = {}
 
-# NEW: Traffic Light Materials and State
+# MODIFIED: Traffic Light Materials and State
 var mat_green: StandardMaterial3D
 var mat_red: StandardMaterial3D
+var mat_off: StandardMaterial3D # NEW: Material for the 'off' state of a light.
 var intersections: Array[TrafficIntersection] =[]
 
 # MODIFIED: Class to manage a single intersection's traffic lights
@@ -78,7 +79,7 @@ func initialize(editor: Node3D):
 	paths_container = Node3D.new()
 	add_child(paths_container)
 	
-	# NEW: Initialize traffic light materials
+	# MODIFIED: Initialize all three materials for the traffic lights.
 	mat_green = StandardMaterial3D.new()
 	mat_green.albedo_color = Color(0, 1, 0)
 	mat_green.emission_enabled = true
@@ -88,6 +89,11 @@ func initialize(editor: Node3D):
 	mat_red.albedo_color = Color(1, 0, 0)
 	mat_red.emission_enabled = true
 	mat_red.emission = Color(1, 0, 0)
+
+	# NEW: Material for when a light is off. It's a dark, non-emissive color.
+	mat_off = StandardMaterial3D.new()
+	mat_off.albedo_color = Color(0.1, 0.1, 0.1)
+	mat_off.emission_enabled = false
 	
 	_init_local_segments()
 	
@@ -326,7 +332,7 @@ func generate_tracks():
 	
 	emit_signal("track_regenerated")
 
-# MODIFIED: Helper to apply the current red/green state to segments and visuals
+# MODIFIED: Helper to apply the current red/green state to the new, detailed traffic lights.
 func _apply_intersection_phase(inter: TrafficIntersection):
 	var active_entry_index = -1
 	
@@ -338,39 +344,86 @@ func _apply_intersection_phase(inter: TrafficIntersection):
 		var entry = inter.entries[i]
 		var is_green = (i == active_entry_index)
 		
+		# Update the state for the track segments (for car logic)
 		for seg in entry["segments"]:
 			seg.is_red_light = not is_green
 			
-		for mi in entry["visuals"]:
-			if is_instance_valid(mi):
-				mi.material_override = mat_green if is_green else mat_red
+		# MODIFIED: Update the visual state of the new two-light traffic signals.
+		for housing in entry["visuals"]:
+			if is_instance_valid(housing):
+				# Find the named child nodes for the red and green lights.
+				var red_light: MeshInstance3D = housing.get_node_or_null("LightRed")
+				var green_light: MeshInstance3D = housing.get_node_or_null("LightGreen")
+				
+				if red_light and green_light:
+					# Apply the correct material based on the light's state.
+					if is_green:
+						green_light.material_override = mat_green
+						red_light.material_override = mat_off
+					else: # Light is red
+						green_light.material_override = mat_off
+						red_light.material_override = mat_red
 
-# NEW: Helper to build the visual traffic light mesh
+# MODIFIED: This function now builds a more detailed traffic light and rotates it correctly.
 func _create_traffic_light(pos: Vector3, dir: Vector3) -> MeshInstance3D:
-	var pole = MeshInstance3D.new()
+	# Create the main pole for the traffic light.
+	var pole = Node3D.new() # MODIFIED: Use a generic Node3D as the parent to avoid mesh orientation issues.
+	
+	var pole_mesh_instance = MeshInstance3D.new()
 	var cyl = CylinderMesh.new()
 	cyl.top_radius = 0.02
 	cyl.bottom_radius = 0.02
 	cyl.height = 0.4
-	pole.mesh = cyl
+	pole_mesh_instance.mesh = cyl
 	
 	var pole_mat = StandardMaterial3D.new()
 	pole_mat.albedo_color = Color(0.2, 0.2, 0.2)
-	pole.material_override = pole_mat
+	pole_mesh_instance.material_override = pole_mat
+	pole.add_child(pole_mesh_instance) # Add mesh as a child of the main Node3D.
 	
-	# Position to the right of the entry lane
+	# Position the pole to the right of the entry lane.
 	var right = dir.cross(Vector3.UP).normalized()
 	pole.position = pos + right * 0.25 + Vector3(0, 0.2, 0)
+	
+	# MODIFIED: Replace look_at with a more robust basis construction to set rotation.
+	# The light should face the incoming cars, which is the opposite of the track direction 'dir'.
+	pole.transform.basis = Basis.looking_at(-dir)
+	
 	paths_container.add_child(pole)
 	
-	var light_box = MeshInstance3D.new()
+	# Create the housing/frame for the lights.
+	var light_housing = MeshInstance3D.new()
 	var box = BoxMesh.new()
 	box.size = Vector3(0.08, 0.15, 0.08)
-	light_box.mesh = box
-	light_box.position = Vector3(0, 0.2, 0)
-	pole.add_child(light_box)
+	light_housing.mesh = box
+	# MODIFIED: Adjust position to be relative to the new Node3D parent.
+	light_housing.position = Vector3(0, 0.2, 0)
+	light_housing.material_override = pole_mat # Use the same dark material as the pole.
+	pole.add_child(light_housing)
+
+	# NEW: Create two distinct lights (red and green) inside the housing.
+	var light_shape = SphereMesh.new()
+	light_shape.radius = 0.025
+	light_shape.height = 0.05
 	
-	return light_box # Return the box so we can change its material later
+	# Create the red light (top).
+	var light_red = MeshInstance3D.new()
+	light_red.name = "LightRed" # Assign a unique name to find it later.
+	light_red.mesh = light_shape
+	# Position it at the top, slightly forward so it's visible from the front.
+	light_red.position = Vector3(0, 0.035, -0.04)
+	light_housing.add_child(light_red)
+	
+	# Create the green light (bottom).
+	var light_green = MeshInstance3D.new()
+	light_green.name = "LightGreen" # Assign a unique name.
+	light_green.mesh = light_shape
+	# Position it at the bottom, slightly forward.
+	light_green.position = Vector3(0, -0.035, -0.04)
+	light_housing.add_child(light_green)
+	
+	# Return the housing, which contains the individual lights as children.
+	return light_housing
 
 func _build_curve_for_segment(seg: TrackSegment) -> Curve3D:
 	var curve = Curve3D.new()
