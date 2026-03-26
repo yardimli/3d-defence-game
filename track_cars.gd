@@ -2,7 +2,7 @@ extends Node3D
 
 # --- Config ---
 @export var vehicle_speed: float = 2.0
-@export var vehicle_spacing: float = 0.5
+@export var vehicle_spacing: float = 1.0
 
 # NEW: Variable to control how far from the red light the cars should stop
 @export var stop_distance_from_light: float = 0.5
@@ -397,13 +397,42 @@ func _physics_process(delta: float):
 			var actual_transform = seg.curve.sample_baked_with_rotation(car.progress, false, false)
 			car.node.global_transform.basis = actual_transform.basis
 
+# MODIFIED: This function now checks for cars on upcoming segments before choosing.
 func _pick_next_segment(car: Dictionary):
+	# If there's no current segment or no available next paths, clear the choice and exit.
 	if not car.segment or car.segment.next_segments.is_empty():
 		car.chosen_next_segment = null
 		return
 
-	# Simply pick a random next path.
-	car.chosen_next_segment = car.segment.next_segments.pick_random()
+	var next_options: Array = car.segment.next_segments
+	
+	# If there's only one path, there's no choice to make.
+	if next_options.size() == 1:
+		car.chosen_next_segment = next_options[0]
+		return
+		
+	# NEW: Find all segments that are not occupied by a car near the entrance.
+	var clear_segments: Array = []
+	for potential_seg in next_options:
+		var is_occupied = false
+		for other_car in active_vehicles:
+			# Check if another car is on the potential segment and is close to the start.
+			# The threshold (2.0) is roughly a car's length to prevent turning into an occupied space.
+			if other_car.segment == potential_seg and other_car.progress < 2.0:
+				is_occupied = true
+				break # Found a car, no need to check others for this segment.
+		
+		# If the segment was not occupied, add it to the list of clear choices.
+		if not is_occupied:
+			clear_segments.append(potential_seg)
+			
+	# NEW: Prioritize choosing from clear segments.
+	if not clear_segments.is_empty():
+		# If there are clear paths, pick a random one from them.
+		car.chosen_next_segment = clear_segments.pick_random()
+	else:
+		# MODIFIED: If all paths are occupied, fall back to picking any random path.
+		car.chosen_next_segment = next_options.pick_random()
 
 
 func _start_uturn(car: Dictionary):
