@@ -10,7 +10,7 @@ signal track_regenerated
 @export var track_width: float = 0.01
 
 # NEW: Option to disable track visualization entirely.
-@export var visualize_tracks: bool = true
+@export var visualize_tracks: bool = false
 # NEW: Option to use alternating colors for debugging track connections.
 @export var use_alternating_colors: bool = true
 # The two colors to alternate between for debugging.
@@ -20,8 +20,8 @@ signal track_regenerated
 @export var default_track_color: Color = Color(0.6, 0.6, 0.6) # Dark grey/black
 
 # NEW: Traffic Light Configuration
-@export var traffic_light_green_duration: float = 5.0
-@export var traffic_light_all_red_duration: float = 2.0
+@export var traffic_light_green_duration: float = 2.5
+@export var traffic_light_all_red_duration: float = 0.5
 # NEW: Variable to randomize start times so intersections don't sync perfectly
 @export var randomize_intersection_start_times: bool = true
 

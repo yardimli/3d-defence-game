@@ -79,6 +79,7 @@ func spawn_car():
 	
 	var car_data = {
 		"node": vehicle_instance_data["root"],
+		"collision_shape": vehicle_instance_data["shape"], # MODIFIED: Store a direct reference to the collision shape
 		"config": vehicle_instance_data["config"],
 		"segment": seg,
 		"progress": progress,
@@ -142,7 +143,7 @@ func _create_vehicle_instance() -> Dictionary:
 		debug_mesh_instance.position.y = bbox_size.y / 2.0
 		physics_body.add_child(debug_mesh_instance)
 		
-	return {"root": physics_body, "config": car_config}
+	return {"root": physics_body, "config": car_config, "shape": shape} # MODIFIED: Return the collision shape node as well
 
 func _unhandled_input(event):
 	if not camera: return
@@ -270,6 +271,13 @@ func _physics_process(delta: float):
 		var seg = car.segment
 		if not seg or not seg.curve: continue
 		
+		# --- MODIFIED: Intersection Collision Handling ---
+		# When a car is on an intersection segment, disable its collision shape
+		# to prevent it from colliding with other cars. Re-enable it otherwise.
+		if is_instance_valid(car.collision_shape):
+			car.collision_shape.disabled = seg.is_intersection
+		# --- END MODIFIED ---
+
 		# MODIFIED: Removed Overtake Logic block from here
 
 		# Handle wait time after collisions.
@@ -379,8 +387,8 @@ func _physics_process(delta: float):
 				# If the dot product is negative, the surface normal is facing the car (frontal crash)
 				if forward.dot(hit_normal) < -0.2:
 					# MODIFIED: Reverted to original collision fallback, removed overtake behavior
-					car.current_speed = -car.base_speed * 0.8
-					car.wait_time = randf_range(0.5, 1.5) 
+					car.current_speed = -car.base_speed * 0.4
+					car.wait_time = randf_range(0.25, 0.75) 
 							
 			# Sync progress to actual physical position.
 			car.progress = seg.curve.get_closest_offset(car.node.global_position)
