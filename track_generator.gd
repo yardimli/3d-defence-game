@@ -46,8 +46,7 @@ var intersections: Array[TrafficIntersection] =[]
 class TrafficIntersection extends RefCounted:
 	var grid_pos: Vector2
 	var phase: int = 0 # Even numbers = Green for a specific entry, Odd numbers = All Red
-	var timer: float = 0.0
-	var is_stale := false # Flag to stop timer chains on old, regenerated intersections.
+	var timer: float = 0.0 # MODIFIED: This is now a simple float, managed by a central process loop.
 	
 	# Store entries dynamically to allow one-by-one green lights
 	# Each dictionary contains: {"dir": Vector3, "segments": Array[TrackSegment], "visuals": Array[MeshInstance3D]}
@@ -100,15 +99,20 @@ func initialize(editor: Node3D):
 		
 	generate_tracks()
 
-# REMOVED: The _process loop is no longer needed for traffic lights.
-# func _process(delta: float): ...
+# NEW: Centralized process loop to manage all intersection timers.
+# This is much more performant than creating a separate Timer node for each intersection.
+func _process(delta: float):
+	# Iterate through all active intersections.
+	for inter in intersections:
+		# Decrement the timer for the current phase.
+		inter.timer -= delta
+		
+		# If the timer has run out, it's time to switch to the next phase.
+		if inter.timer <= 0:
+			_advance_intersection_phase(inter)
 
-# This function is called by a timer to advance an intersection to its next phase.
+# MODIFIED: This function is now called by the central _process loop, not a Timer node.
 func _advance_intersection_phase(inter: TrafficIntersection):
-	# If the intersection belongs to a previous track generation, stop its timer chain.
-	if inter.is_stale:
-		return
-
 	var num_entries = inter.entries.size()
 	if num_entries == 0: return
 
@@ -120,9 +124,10 @@ func _advance_intersection_phase(inter: TrafficIntersection):
 	var is_green_phase = (inter.phase % 2 == 0)
 	var duration = traffic_light_green_duration if is_green_phase else traffic_light_all_red_duration
 	
-	# Create a new timer to trigger the next phase change.
-	var timer = get_tree().create_timer(duration)
-	timer.timeout.connect(_advance_intersection_phase.bind(inter))
+	# Reset the timer for the new phase.
+	# We add any leftover time from the previous phase (inter.timer will be negative)
+	# to maintain accurate timing over the long run.
+	inter.timer = duration + inter.timer
 
 func _init_local_segments():
 	var d = lane_offset
@@ -197,12 +202,10 @@ func _get_road_type(model_path: String) -> String:
 
 # Generates the track graph, assigns colors for debugging, and sets up traffic lights.
 func generate_tracks():
-	# Before clearing old data, mark existing intersections as stale.
-	# This will stop their timer chains from continuing to run after they are destroyed.
-	for inter in intersections:
-		inter.is_stale = true
-		
+	# MODIFIED: Clear all previous track and intersection data.
+	# The old RefCounted TrafficIntersection objects will be freed automatically.
 	track_segments.clear()
+	intersections.clear()
 	for child in paths_container.get_children():
 		child.queue_free()
 		
@@ -244,7 +247,6 @@ func generate_tracks():
 	track_segments = all_segments
 	
 	# Setup Traffic Lights for Intersections
-	intersections.clear()
 	var grid_segments = {}
 	for seg in all_segments:
 		if seg.is_intersection:
@@ -279,7 +281,7 @@ func generate_tracks():
 		for dir_key in entries_by_dir:
 			intersection.entries.append(entries_by_dir[dir_key])
 		
-		# The timer-based system is kicked off here.
+		# MODIFICATION: The timer-based system is replaced with a manual timer float.
 		var initial_duration: float
 		if randomize_intersection_start_times:
 			var num_entries = intersection.entries.size()
@@ -298,10 +300,9 @@ func generate_tracks():
 		# Apply the initial visual state of the lights immediately
 		_apply_intersection_phase(intersection)
 		
-		# Start the timer chain. When this first timer finishes, it will call _advance_intersection_phase,
-		# which will then create the next timer, forming a continuous cycle.
-		var timer = get_tree().create_timer(initial_duration)
-		timer.timeout.connect(_advance_intersection_phase.bind(intersection))
+		# MODIFICATION: Instead of creating a Timer node, we just set the float value.
+		# The central _process loop will now handle decrementing this timer.
+		intersection.timer = initial_duration
 					
 		intersections.append(intersection)
 	

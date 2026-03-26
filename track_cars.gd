@@ -113,37 +113,62 @@ func initialize(editor: Node3D, track_gen: Node3D, cam: Camera3D):
 	
 	track_generator.track_regenerated.connect(on_track_regenerated)
 
-func spawn_car():
+# MODIFIED: This function now spawns a car at a specific position, not randomly.
+# It finds the closest road segment and checks for other nearby cars.
+# It returns 'true' on success and 'false' on failure.
+func spawn_car(spawn_position: Vector3) -> bool:
+	# 1. Check if there are any tracks to spawn on.
 	if track_generator.track_segments.is_empty():
 		print("No tracks available to spawn a car.")
-		return
+		return false
 		
-	var seg = track_generator.track_segments.pick_random()
-	var progress = randf() * seg.curve.get_baked_length()
+	# 2. Find the closest track segment to the requested spawn position.
+	var min_dist = INF
+	var closest_seg = null
+	var best_progress = 0.0
+	for seg in track_generator.track_segments:
+		var closest_pt_on_curve = seg.curve.get_closest_point(spawn_position)
+		var dist = closest_pt_on_curve.distance_to(spawn_position)
+		if dist < min_dist:
+			min_dist = dist
+			closest_seg = seg
+			best_progress = seg.curve.get_closest_offset(spawn_position)
 	
+	# 3. Validate that a close-enough track was found.
+	# A max distance of 2.0 (one tile width) is a reasonable threshold.
+	if not closest_seg or min_dist > 2.0:
+		print("No track found near the spawn position.")
+		return false
+
+	# 4. Get the exact transform (position and rotation) on the chosen track.
+	var initial_transform = closest_seg.curve.sample_baked_with_rotation(best_progress, false, false)
+
+	# 5. Check if another car is already at or very near the spawn point.
+	for other_car in active_vehicles:
+		if other_car.node.global_position.distance_to(initial_transform.origin) < 2.0: # Approx. one car length
+			print("Spawn failed: Another car is too close to the spawn point.")
+			return false # Abort spawn if the spot is occupied.
+
+	# 6. If all checks pass, create and place the car.
 	var vehicle_instance_data = _create_vehicle_instance()
 	if vehicle_instance_data.is_empty():
 		printerr("Failed to create vehicle instance. Check model paths.")
-		return
+		return false
 	
 	# Set the car's initial position and rotation *before* adding it to the scene.
-	# This prevents the car from spawning at the world origin and having to snap to the track,
-	# which could cause it to collide with other objects and get stuck.
-	var initial_transform = seg.curve.sample_baked_with_rotation(progress, false, false)
 	vehicle_instance_data["root"].global_transform = initial_transform
-		
 	add_child(vehicle_instance_data["root"])
 	
 	var car_data = {
 		"node": vehicle_instance_data["root"],
-		"collision_shape": vehicle_instance_data["shape"], # Store a direct reference to the collision shape
+		"collision_shape": vehicle_instance_data["shape"],
 		"config": vehicle_instance_data["config"],
-		"segment": seg,
-		"progress": progress,
+		"segment": closest_seg,
+		"progress": best_progress,
 		"base_speed": vehicle_speed * randf_range(0.8, 1.2),
 		"current_speed": 0.0,
 		"state": "driving",
-		"wait_time": 0.0, # Used for pausing after a collision
+		"wait_time": 0.0,
 		"uturn_timer": 0.0,
 		"uturn_start_pos": Vector3.ZERO,
 		"uturn_start_basis": Basis(),
@@ -154,6 +179,7 @@ func spawn_car():
 	
 	active_vehicles.append(car_data)
 	_pick_next_segment(car_data)
+	return true # Return true to indicate success.
 
 func _create_vehicle_instance() -> Dictionary:
 	if vehicle_models.is_empty():

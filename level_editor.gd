@@ -183,7 +183,11 @@ func _connect_ui_signals():
 	btn_road_builder.pressed.connect(_on_road_builder_toggled)
 	road_builder.scene_modified.connect(_mark_as_modified)
 	
-	btn_spawn_car.pressed.connect(track_cars.spawn_car)
+	# MODIFIED: Connect the spawn car button to a new handler function.
+	btn_spawn_car.pressed.connect(_on_spawn_car_button_pressed)
+	# NEW: Connect the track regeneration signal to the status label update.
+	# This ensures the traffic light count is accurate after roads are changed.
+	track_generator.track_regenerated.connect(_update_status_label)
 
 	btn_demo_camera.toggled.connect(_on_demo_camera_toggled)
 	btn_follow_car.toggled.connect(_on_follow_car_toggled)
@@ -370,6 +374,29 @@ func _create_selection_marker(target: Node3D):
 # ==========================================
 # UI CALLBACKS
 # ==========================================
+# NEW: Handles the "Spawn Car" button press.
+func _on_spawn_car_button_pressed():
+	# First, check if the cursor is visible (i.e., within the terrain bounds).
+	if not cursor.visible:
+		status_label.text = "Cannot spawn car: Cursor is outside terrain bounds."
+		return
+
+	var grid_pos = Vector2(cursor.position.x, cursor.position.z)
+	
+	# Use the road_builder to verify that the cursor is over a road tile.
+	if road_builder.is_road_at(grid_pos):
+		# If it's a road, tell the track_cars module to spawn a car at the cursor's 3D position.
+		var success = track_cars.spawn_car(cursor.position)
+		if success:
+			# If spawning was successful, update the status bar to reflect the new car count.
+			_update_status_label()
+		else:
+			# Provide feedback if spawning failed (e.g., another car was too close).
+			status_label.text = "Cannot spawn car: Another car is too close."
+	else:
+		# Provide feedback if the cursor is not on a road.
+		status_label.text = "Cannot spawn car: Cursor is not on a road."
+
 func _on_demo_camera_toggled(button_pressed: bool):
 	if button_pressed:
 		# Turn on demo mode
@@ -479,13 +506,31 @@ func _mark_as_modified():
 		is_modified = true
 		_update_status_label()
 
+# MODIFIED: The status label now includes counts for traffic lights and cars.
 func _update_status_label():
 	# Don't update the status if a special camera mode is active
 	if is_demo_camera_active or is_follow_car_mode_active or is_following_car:
 		return
+		
 	var file_text = current_scene_name if not current_scene_name.is_empty() else "Untitled"
 	var modified_star = " *" if is_modified else ""
-	status_label.text = file_text + modified_star
+	
+	# NEW: Get the counts from their respective modules.
+	var light_count = 0
+	# Ensure the track_generator is valid before accessing its properties.
+	if is_instance_valid(track_generator):
+		light_count = track_generator.intersections.size()
+		
+	var car_count = 0
+	# Ensure the track_cars module is valid.
+	if is_instance_valid(track_cars):
+		car_count = track_cars.active_vehicles.size()
+		
+	# NEW: Format a string with the new statistics.
+	var stats_text = " | Lights: %d | Cars: %d" % [light_count, car_count]
+	
+	# Combine the file info with the new stats and set the label's text.
+	status_label.text = file_text + modified_star + stats_text
 
 # ==========================================
 # PROPERTIES PANEL HANDLERS
