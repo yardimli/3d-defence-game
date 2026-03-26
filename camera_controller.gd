@@ -122,7 +122,9 @@ func _set_new_demo_target():
 			cam_rot_y = randf_range(0, 360)
 			cam_zoom = randf_range(20.0, 40.0)
 		1: # Ground level view
-			cam_rot_x = randf_range(-25.0, -10.0)
+			# MODIFIED: Lowered the minimum angle and allowed it to go slightly above the horizon
+			# to make the sky visible.
+			cam_rot_x = randf_range(-15.0, 5.0)
 			cam_rot_y = randf_range(0, 360)
 			cam_zoom = randf_range(5.0, 15.0)
 		2: # Isometric view
@@ -148,14 +150,15 @@ func handle_input(event: InputEvent) -> bool:
 			var forward = camera.global_transform.basis.z
 			forward.y = 0
 			forward = forward.normalized()
-			var pan_speed = 0.01 * cam_zoom
+			var pan_speed = 0.001 * cam_zoom
 			global_position -= (right * event.relative.x + forward * event.relative.y) * pan_speed
 			return true
 		elif Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
 			# Rotation works in both MANUAL and FOLLOW modes
 			cam_rot_y -= event.relative.x * 0.4
 			cam_rot_x -= event.relative.y * 0.4
-			cam_rot_x = clamp(cam_rot_x, -89.0, -10.0)
+			# MODIFIED: Increased the upper clamp to allow looking up further, matching the new demo mode range.
+			cam_rot_x = clamp(cam_rot_x, -89.0, 5.0)
 			return true
 	elif event is InputEventPanGesture:
 		# Zoom works in both MANUAL and FOLLOW modes

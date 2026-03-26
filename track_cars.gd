@@ -204,6 +204,11 @@ func _unhandled_input(event):
 	if not camera: return
 	
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		# MODIFIED: If the level editor is waiting for a car to follow, do not handle the input here.
+		# This allows the level_editor's own input handler to process the click and start the follow camera.
+		if level_editor.is_follow_car_mode_active:
+			return
+
 		if event.pressed:
 			var space_state = get_world_3d().direct_space_state
 			var mouse_pos = event.position

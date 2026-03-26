@@ -336,6 +336,41 @@ func _delete_model_at_cursor():
 	_mark_as_modified()
 
 # ==========================================
+# MARKER & MISC HELPERS
+# ==========================================
+
+# NEW: Creates a temporary visual marker above a car when selected for follow mode.
+func _create_selection_marker(target: Node3D):
+	# Create the marker mesh
+	var marker = MeshInstance3D.new()
+	var mesh = SphereMesh.new()
+	mesh.radius = 0.3
+	mesh.height = 0.6
+	marker.mesh = mesh
+	
+	# Create a bright, unshaded material that can be faded out
+	var material = StandardMaterial3D.new()
+	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	material.albedo_color = Color(1.0, 1.0, 0.0, 0.8) # Yellow
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED # Make it visible in all lighting
+	marker.material_override = material
+	
+	# Position the marker above the car's origin
+	marker.position = Vector3(0, 1.5, 0)
+	
+	# Add the marker to the car so it moves with it
+	target.add_child(marker)
+	
+	# Create a tween to handle the fade-out and cleanup
+	var tween = create_tween()
+	# Wait for 2 seconds before starting the fade
+	tween.tween_interval(2.0)
+	# Animate the alpha component of the material's color to 0 over 1 second
+	tween.tween_property(material, "albedo_color:a", 0.0, 1.0)
+	# When the tween is finished, call queue_free() on the marker to remove it
+	tween.tween_callback(marker.queue_free)
+
+# ==========================================
 # UI CALLBACKS
 # ==========================================
 # NEW: Toggles the automated demo camera mode
@@ -595,8 +630,9 @@ func _unhandled_input(event):
 	# MODIFIED: Let the camera controller handle its input first, but respect our new modes
 	if camera_pivot.has_method("handle_input") and camera_pivot.handle_input(event):
 		get_viewport().set_input_as_handled()
-		# If we are following a car, we still want to process other inputs like escape
-		if not is_following_car:
+		# MODIFIED: This check was incorrectly blocking the logic to INITIATE follow mode.
+		# It's now scoped to only return if we are already following a car, allowing other inputs (like ESC or clicks) to be processed below.
+		if is_following_car:
 			return
 
 	if event is InputEventKey and event.pressed:
@@ -645,6 +681,7 @@ func _unhandled_input(event):
 						is_following_car = true
 						is_follow_car_mode_active = false # We've selected a car, so we're no longer "waiting"
 						camera_pivot.start_follow_mode(car_node)
+						_create_selection_marker(car_node) # NEW: Add visual marker to the selected car
 						status_label.text = "Following Car. Use right-mouse to orbit. Press ESC to stop."
 						get_viewport().set_input_as_handled()
 					else:
