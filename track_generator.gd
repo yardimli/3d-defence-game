@@ -50,6 +50,7 @@ class TrafficIntersection extends RefCounted:
 	var grid_pos: Vector2
 	var phase: int = 0 # Even numbers = Green for a specific entry, Odd numbers = All Red
 	var timer: float = 0.0
+	var is_stale := false # NEW: Flag to stop timer chains on old, regenerated intersections.
 	
 	# NEW: Store entries dynamically to allow one-by-one green lights
 	# Each dictionary contains: {"dir": Vector3, "segments": Array[TrackSegment], "visuals": Array[MeshInstance3D]}
@@ -102,34 +103,29 @@ func initialize(editor: Node3D):
 		
 	generate_tracks()
 
-# MODIFIED: Process loop to manage traffic light timings sequentially for each direction
-func _process(delta: float):
-	if intersections.is_empty(): return
+# REMOVED: The _process loop is no longer needed for traffic lights.
+# func _process(delta: float): ...
+
+# NEW: This function is called by a timer to advance an intersection to its next phase.
+func _advance_intersection_phase(inter: TrafficIntersection):
+	# If the intersection belongs to a previous track generation, stop its timer chain.
+	if inter.is_stale:
+		return
+
+	var num_entries = inter.entries.size()
+	if num_entries == 0: return
+
+	# Advance to the next phase in the cycle.
+	inter.phase = (inter.phase + 1) % (num_entries * 2)
+	_apply_intersection_phase(inter)
+
+	# Determine the duration of this new phase.
+	var is_green_phase = (inter.phase % 2 == 0)
+	var duration = traffic_light_green_duration if is_green_phase else traffic_light_all_red_duration
 	
-	for inter in intersections:
-		inter.timer += delta
-		var phase_changed = false
-		var num_entries = inter.entries.size()
-		
-		if num_entries == 0: continue
-		
-		# Cycle through phases dynamically based on number of entries
-		# Phase 0: Entry 0 Green, Phase 1: All Red, Phase 2: Entry 1 Green, Phase 3: All Red, etc.
-		var is_green_phase = (inter.phase % 2 == 0)
-		
-		if is_green_phase:
-			if inter.timer >= traffic_light_green_duration:
-				inter.phase = (inter.phase + 1) % (num_entries * 2)
-				inter.timer = 0.0
-				phase_changed = true
-		else:
-			if inter.timer >= traffic_light_all_red_duration:
-				inter.phase = (inter.phase + 1) % (num_entries * 2)
-				inter.timer = 0.0
-				phase_changed = true
-				
-		if phase_changed:
-			_apply_intersection_phase(inter)
+	# Create a new timer to trigger the next phase change.
+	var timer = get_tree().create_timer(duration)
+	timer.timeout.connect(_advance_intersection_phase.bind(inter))
 
 func _init_local_segments():
 	var d = lane_offset
@@ -204,6 +200,11 @@ func _get_road_type(model_path: String) -> String:
 
 # MODIFIED: Generates the track graph, assigns colors for debugging, and sets up traffic lights.
 func generate_tracks():
+	# MODIFIED: Before clearing old data, mark existing intersections as stale.
+	# This will stop their timer chains from continuing to run after they are destroyed.
+	for inter in intersections:
+		inter.is_stale = true
+		
 	track_segments.clear()
 	for child in paths_container.get_children():
 		child.queue_free()
@@ -281,18 +282,31 @@ func generate_tracks():
 		for dir_key in entries_by_dir:
 			intersection.entries.append(entries_by_dir[dir_key])
 		
-		# NEW: Randomize start phases and timers so they don't all sync up
+		# MODIFIED: The timer-based system is kicked off here.
+		var initial_duration: float
 		if randomize_intersection_start_times:
 			var num_entries = intersection.entries.size()
 			if num_entries > 0:
+				# Randomly pick a starting phase
 				intersection.phase = randi() % (num_entries * 2)
-				if intersection.phase % 2 == 0:
-					intersection.timer = randf_range(0.0, traffic_light_green_duration)
-				else:
-					intersection.timer = randf_range(0.0, traffic_light_all_red_duration)
+				# Set a random duration for this first, partial phase
+				if intersection.phase % 2 == 0: # Is a green phase
+					initial_duration = randf_range(0.0, traffic_light_green_duration)
+				else: # Is an all-red phase
+					initial_duration = randf_range(0.0, traffic_light_all_red_duration)
+		else:
+			# If not randomizing, start with the full duration of the first phase (phase 0, green)
+			initial_duration = traffic_light_green_duration
+
+		# Apply the initial visual state of the lights immediately
+		_apply_intersection_phase(intersection)
+		
+		# Start the timer chain. When this first timer finishes, it will call _advance_intersection_phase,
+		# which will then create the next timer, forming a continuous cycle.
+		var timer = get_tree().create_timer(initial_duration)
+		timer.timeout.connect(_advance_intersection_phase.bind(intersection))
 					
 		intersections.append(intersection)
-		_apply_intersection_phase(intersection) # Initialize the state
 	
 	# If visualization is turned off, stop here.
 	if not visualize_tracks:
