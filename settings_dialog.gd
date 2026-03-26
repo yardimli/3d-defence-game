@@ -16,7 +16,6 @@ signal preview_settings_changed(settings: Dictionary)
 @onready var look_at_y_spinbox: SpinBox = %LookAtYSpinBox
 @onready var look_at_z_spinbox: SpinBox = %LookAtZSpinBox
 
-# NEW: References for Skybox and Terrain controls
 @onready var cloud_density_slider: HSlider = %CloudDensitySlider
 @onready var cloud_speed_slider: HSlider = %CloudSpeedSlider
 @onready var terrain_width_spinbox: SpinBox = %TerrainWidthSpinBox
@@ -31,7 +30,6 @@ func _ready():
 	apply_button.pressed.connect(_on_apply_pressed)
 	close_requested.connect(hide)
 	
-	# NEW: Connect new UI signals
 	cloud_density_slider.value_changed.connect(_on_cloud_density_changed)
 	cloud_speed_slider.value_changed.connect(_on_cloud_speed_changed)
 	terrain_width_spinbox.value_changed.connect(_on_terrain_width_changed)
@@ -54,7 +52,6 @@ func open_with_settings(current_settings: Dictionary):
 	look_at_y_spinbox.value = look_at.y
 	look_at_z_spinbox.value = look_at.z
 	
-	# NEW: Populate the new fields
 	cloud_density_slider.value = current_settings.get("cloud_density", 0.5)
 	cloud_speed_slider.value = current_settings.get("cloud_speed", 0.02)
 	terrain_width_spinbox.value = current_settings.get("terrain_width", 100)
@@ -74,7 +71,6 @@ func _on_apply_pressed():
 	}
 	emit_signal("preview_settings_changed", override_settings)
 
-# NEW: Handlers for Skybox and Terrain settings
 func _on_cloud_density_changed(value: float):
 	emit_signal("setting_changed", "cloud_density", value)
 

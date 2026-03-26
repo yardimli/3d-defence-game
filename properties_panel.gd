@@ -6,7 +6,7 @@ signal position_changed(new_pos: Vector3)
 signal scale_changed(new_scale: float)
 # Emitted when the user clicks the up/down buttons for stack order.
 signal order_changed(direction: int)
-# NEW: Emitted when the user toggles the grid snap checkbox.
+# Emitted when the user toggles the grid snap checkbox.
 signal grid_snap_toggled(should_snap: bool)
 
 # --- State ---
@@ -14,8 +14,6 @@ var _is_updating := false # Prevents signals from firing when populating fields.
 var _selected_node: Node3D = null
 
 # --- Node-Referenzen ---
-# MODIFIED: Switched from get_node() to the more robust % syntax.
-# This requires the nodes to have "unique_name_in_owner" set in the scene file.
 @onready var grid_pos_label: Label = %GridPosLabel
 @onready var pos_x_spinbox: SpinBox = %PosXSpinBox
 @onready var pos_y_spinbox: SpinBox = %PosYSpinBox

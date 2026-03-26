@@ -9,9 +9,7 @@ signal track_regenerated
 @export var turn_radius: float = 1.0 # Modifier for the curve radius
 @export var track_width: float = 0.01
 
-# NEW: Option to disable track visualization entirely.
 @export var visualize_tracks: bool = false
-# NEW: Option to use alternating colors for debugging track connections.
 @export var use_alternating_colors: bool = true
 # The two colors to alternate between for debugging.
 @export var debug_color_a: Color = Color("#0000AA")
@@ -19,10 +17,9 @@ signal track_regenerated
 # Default track color, used when alternating colors are disabled.
 @export var default_track_color: Color = Color(0.6, 0.6, 0.6) # Dark grey/black
 
-# NEW: Traffic Light Configuration
+# Traffic Light Configuration
 @export var traffic_light_green_duration: float = 2.5
 @export var traffic_light_all_red_duration: float = 0.5
-# NEW: Variable to randomize start times so intersections don't sync perfectly
 @export var randomize_intersection_start_times: bool = true
 
 # --- Dependencies ---
@@ -39,24 +36,24 @@ var track_segments: Array[TrackSegment] =[]
 # Local segment definitions (at 0 degrees rotation)
 var local_segments = {}
 
-# MODIFIED: Traffic Light Materials and State
+# Traffic Light Materials and State
 var mat_green: StandardMaterial3D
 var mat_red: StandardMaterial3D
-var mat_off: StandardMaterial3D # NEW: Material for the 'off' state of a light.
+var mat_off: StandardMaterial3D # Material for the 'off' state of a light.
 var intersections: Array[TrafficIntersection] =[]
 
-# MODIFIED: Class to manage a single intersection's traffic lights
+# Class to manage a single intersection's traffic lights
 class TrafficIntersection extends RefCounted:
 	var grid_pos: Vector2
 	var phase: int = 0 # Even numbers = Green for a specific entry, Odd numbers = All Red
 	var timer: float = 0.0
-	var is_stale := false # NEW: Flag to stop timer chains on old, regenerated intersections.
+	var is_stale := false # Flag to stop timer chains on old, regenerated intersections.
 	
-	# NEW: Store entries dynamically to allow one-by-one green lights
+	# Store entries dynamically to allow one-by-one green lights
 	# Each dictionary contains: {"dir": Vector3, "segments": Array[TrackSegment], "visuals": Array[MeshInstance3D]}
 	var entries: Array[Dictionary] =[]
 
-# MODIFIED: TrackSegment now holds its own curve, a list of connected next segments, intersection data, and a color for visualization.
+# TrackSegment now holds its own curve, a list of connected next segments, intersection data, and a color for visualization.
 class TrackSegment extends RefCounted:
 	var start_pos: Vector3
 	var start_dir: Vector3
@@ -69,7 +66,7 @@ class TrackSegment extends RefCounted:
 	var grid_pos: Vector2
 	var color: Color = Color.BLACK
 	var is_colored: bool = false 
-	var is_red_light: bool = false # NEW: Flag to tell cars if they must stop before entering
+	var is_red_light: bool = false # Flag to tell cars if they must stop before entering
 
 func initialize(editor: Node3D):
 	level_editor = editor
@@ -80,7 +77,7 @@ func initialize(editor: Node3D):
 	paths_container = Node3D.new()
 	add_child(paths_container)
 	
-	# MODIFIED: Initialize all three materials for the traffic lights.
+	# Initialize all three materials for the traffic lights.
 	mat_green = StandardMaterial3D.new()
 	mat_green.albedo_color = Color(0, 1, 0)
 	mat_green.emission_enabled = true
@@ -91,7 +88,7 @@ func initialize(editor: Node3D):
 	mat_red.emission_enabled = true
 	mat_red.emission = Color(1, 0, 0)
 
-	# NEW: Material for when a light is off. It's a dark, non-emissive color.
+	# Material for when a light is off. It's a dark, non-emissive color.
 	mat_off = StandardMaterial3D.new()
 	mat_off.albedo_color = Color(0.1, 0.1, 0.1)
 	mat_off.emission_enabled = false
@@ -106,7 +103,7 @@ func initialize(editor: Node3D):
 # REMOVED: The _process loop is no longer needed for traffic lights.
 # func _process(delta: float): ...
 
-# NEW: This function is called by a timer to advance an intersection to its next phase.
+# This function is called by a timer to advance an intersection to its next phase.
 func _advance_intersection_phase(inter: TrafficIntersection):
 	# If the intersection belongs to a previous track generation, stop its timer chain.
 	if inter.is_stale:
@@ -198,9 +195,9 @@ func _get_road_type(model_path: String) -> String:
 	if "road-crossroad" in model_path: return "crossroad"
 	return ""
 
-# MODIFIED: Generates the track graph, assigns colors for debugging, and sets up traffic lights.
+# Generates the track graph, assigns colors for debugging, and sets up traffic lights.
 func generate_tracks():
-	# MODIFIED: Before clearing old data, mark existing intersections as stale.
+	# Before clearing old data, mark existing intersections as stale.
 	# This will stop their timer chains from continuing to run after they are destroyed.
 	for inter in intersections:
 		inter.is_stale = true
@@ -246,7 +243,7 @@ func generate_tracks():
 				
 	track_segments = all_segments
 	
-	# NEW: Setup Traffic Lights for Intersections
+	# Setup Traffic Lights for Intersections
 	intersections.clear()
 	var grid_segments = {}
 	for seg in all_segments:
@@ -260,7 +257,7 @@ func generate_tracks():
 		var intersection = TrafficIntersection.new()
 		intersection.grid_pos = g_pos
 		
-		# MODIFIED: Group segments by their incoming direction to allow sequential green lights
+		# Group segments by their incoming direction to allow sequential green lights
 		var entries_by_dir = {}
 		var processed_starts =[]
 		
@@ -282,7 +279,7 @@ func generate_tracks():
 		for dir_key in entries_by_dir:
 			intersection.entries.append(entries_by_dir[dir_key])
 		
-		# MODIFIED: The timer-based system is kicked off here.
+		# The timer-based system is kicked off here.
 		var initial_duration: float
 		if randomize_intersection_start_times:
 			var num_entries = intersection.entries.size()
@@ -346,7 +343,7 @@ func generate_tracks():
 	
 	emit_signal("track_regenerated")
 
-# MODIFIED: Helper to apply the current red/green state to the new, detailed traffic lights.
+# Helper to apply the current red/green state to the new, detailed traffic lights.
 func _apply_intersection_phase(inter: TrafficIntersection):
 	var active_entry_index = -1
 	
@@ -362,7 +359,7 @@ func _apply_intersection_phase(inter: TrafficIntersection):
 		for seg in entry["segments"]:
 			seg.is_red_light = not is_green
 			
-		# MODIFIED: Update the visual state of the new two-light traffic signals.
+		# Update the visual state of the new two-light traffic signals.
 		for housing in entry["visuals"]:
 			if is_instance_valid(housing):
 				# Find the named child nodes for the red and green lights.
@@ -378,10 +375,9 @@ func _apply_intersection_phase(inter: TrafficIntersection):
 						green_light.material_override = mat_off
 						red_light.material_override = mat_red
 
-# MODIFIED: This function now builds a more detailed traffic light and rotates it correctly.
 func _create_traffic_light(pos: Vector3, dir: Vector3) -> MeshInstance3D:
 	# Create the main pole for the traffic light.
-	var pole = Node3D.new() # MODIFIED: Use a generic Node3D as the parent to avoid mesh orientation issues.
+	var pole = Node3D.new()
 	
 	var pole_mesh_instance = MeshInstance3D.new()
 	var cyl = CylinderMesh.new()
@@ -398,9 +394,6 @@ func _create_traffic_light(pos: Vector3, dir: Vector3) -> MeshInstance3D:
 	# Position the pole to the right of the entry lane.
 	var right = dir.cross(Vector3.UP).normalized()
 	pole.position = pos + right * 0.25 + Vector3(0, 0.2, 0)
-	
-	# MODIFIED: Replace look_at with a more robust basis construction to set rotation.
-	# The light should face the incoming cars, which is the opposite of the track direction 'dir'.
 	pole.transform.basis = Basis.looking_at(-dir)
 	
 	paths_container.add_child(pole)
@@ -410,12 +403,13 @@ func _create_traffic_light(pos: Vector3, dir: Vector3) -> MeshInstance3D:
 	var box = BoxMesh.new()
 	box.size = Vector3(0.08, 0.15, 0.08)
 	light_housing.mesh = box
-	# MODIFIED: Adjust position to be relative to the new Node3D parent.
+	
+	# Adjust position to be relative to the new Node3D parent.
 	light_housing.position = Vector3(0, 0.2, 0)
 	light_housing.material_override = pole_mat # Use the same dark material as the pole.
 	pole.add_child(light_housing)
 
-	# NEW: Create two distinct lights (red and green) inside the housing.
+	# Create two distinct lights (red and green) inside the housing.
 	var light_shape = SphereMesh.new()
 	light_shape.radius = 0.025
 	light_shape.height = 0.05

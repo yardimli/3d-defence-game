@@ -1,6 +1,6 @@
 extends PanelContainer
 
-# MODIFIED: Emits a dictionary with path and scale info.
+# Emits a dictionary with path and scale info.
 signal model_selected(data: Dictionary)
 # Emitted when the selection should be cleared (e.g., right-click).
 signal selection_cleared
@@ -11,12 +11,12 @@ var models_folder := "res://models"
 # --- State ---
 var preview_buttons := []
 var selected_button: Button = null
-# NEW: ConfigFile objects to hold root and folder-specific settings.
+# ConfigFile objects to hold root and folder-specific settings.
 var root_config := ConfigFile.new()
 var folder_config: ConfigFile = null
-# NEW: Holds the path of the currently viewed folder.
+# Holds the path of the currently viewed folder.
 var current_folder_path: String = ""
-# NEW: Holds temporary override settings from the settings dialog.
+# Holds temporary override settings from the settings dialog.
 var preview_overrides: Dictionary = {}
 
 # --- Node-Referenzen ---
@@ -24,10 +24,10 @@ var preview_overrides: Dictionary = {}
 @onready var model_list: VBoxContainer = %ModelList
 
 func _ready():
-	# NEW: Load the root config file for fallback values.
+	# Load the root config file for fallback values.
 	root_config.load("res://config.cfg")
 	
-	# NEW: Programmatically set the font size for the dropdown to ensure it applies.
+	# Programmatically set the font size for the dropdown to ensure it applies.
 	folder_dropdown.add_theme_font_size_override("font_size", 24)
 	
 	# Connect the dropdown's item_selected signal to the folder change handler.
@@ -35,14 +35,14 @@ func _ready():
 	# Initial population of the asset list.
 	_populate_folder_dropdown()
 
-# NEW: Public method for the level editor to apply temporary settings.
+# Public method for the level editor to apply temporary settings.
 func apply_preview_overrides(settings: Dictionary):
 	preview_overrides = settings
 	# Refresh the previews with the new override settings.
 	if not current_folder_path.is_empty():
 		_populate_model_previews(current_folder_path)
 
-# NEW: Public method for the level editor to get current settings for the dialog.
+# Public method for the level editor to get current settings for the dialog.
 func get_current_preview_settings() -> Dictionary:
 	var cam_settings = _get_camera_settings()
 	var default_scale = root_config.get_value("Settings", "model_scale", 1.0)
@@ -101,15 +101,15 @@ func _populate_folder_dropdown():
 		folder_dropdown.select(index_to_select)
 		_on_folder_selected(index_to_select)
 
-# MODIFIED: Handles the selection of a new folder from the dropdown.
+# Handles the selection of a new folder from the dropdown.
 func _on_folder_selected(index: int):
-	# NEW: Clear any temporary overrides when changing folders.
+	# Clear any temporary overrides when changing folders.
 	preview_overrides.clear()
 	
 	var folder_name = folder_dropdown.get_item_text(index)
 	current_folder_path = models_folder.path_join(folder_name)
 	
-	# NEW: Attempt to load a config file from the selected subfolder.
+	# Attempt to load a config file from the selected subfolder.
 	var sub_config_path = current_folder_path.path_join("config.cfg")
 	var sub_config = ConfigFile.new()
 	if sub_config.load(sub_config_path) == OK:
@@ -148,8 +148,7 @@ func _populate_model_previews(path: String):
 		for model_path in model_paths:
 			_create_model_preview_button(model_path)
 
-# MODIFIED: Helper function to get the correct scale for a model.
-# It now checks for an override value first.
+# Helper function to get the correct scale for a model. Checks for an override value first.
 func _get_scale_for_model(model_path: String) -> float:
 	var model_filename = model_path.get_file()
 	
@@ -172,8 +171,7 @@ func _get_scale_for_model(model_path: String) -> float:
 	# 4. Fallback to the default scale from the root config.cfg
 	return root_config.get_value("Settings", "model_scale", 1.0)
 
-# MODIFIED: Helper function to get camera settings for the preview.
-# It now checks for override values first.
+# Helper function to get camera settings for the preview. Checks for override values first.
 func _get_camera_settings() -> Dictionary:
 	var default_pos = Vector3(0, 1.0, 2.5)
 	var default_look_at = Vector3(0, 0, 0)
@@ -208,14 +206,13 @@ func _create_model_preview_button(path: String):
 	var btn = Button.new()
 	btn.custom_minimum_size = Vector2(220, 220)
 	
-	# MODIFIED: Get the specific scale for this model and bind it to the press signal.
+	# Get the specific scale for this model and bind it to the press signal.
 	var scale = _get_scale_for_model(path)
 	btn.pressed.connect(_on_model_button_pressed.bind(path, btn, scale))
 	
 	var scene_name = path.get_file().get_basename()
 	var label = Label.new()
 	label.text = " " + scene_name
-	# MODIFIED: Increase the font size for the model name label.
 	label.add_theme_font_size_override("font_size", 18)
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
@@ -234,11 +231,11 @@ func _create_model_preview_button(path: String):
 	vp.size = Vector2(220, 220)
 	svc.add_child(vp)
 	
-	# NEW: Get camera settings from config files.
+	# Get camera settings from config files.
 	var cam_settings = _get_camera_settings()
 	var cam = Camera3D.new()
 	vp.add_child(cam)
-	# NEW: Apply settings from config or fallback to defaults.
+	# Apply settings from config or fallback to defaults.
 	cam.position = cam_settings.get("position")
 	cam.call_deferred("look_at", cam_settings.get("look_at"))
 
@@ -269,7 +266,6 @@ func _get_mesh_instances(node: Node, result: Array):
 	for child in node.get_children():
 		_get_mesh_instances(child, result)
 
-# MODIFIED: Handles a model button being pressed, now includes scale.
 func _on_model_button_pressed(path: String, btn: Button, scale: float):
 	# Deselect if the same button is pressed again.
 	if selected_button == btn:
@@ -282,7 +278,7 @@ func _on_model_button_pressed(path: String, btn: Button, scale: float):
 		selected_button = btn
 		selected_button.modulate = Color(0.4, 1.0, 0.4) # Highlight color
 		
-		# MODIFIED: Inform the main editor of the selection, including the scale.
+		# Inform the main editor of the selection, including the scale.
 		var data = {"path": path, "scale": scale}
 		emit_signal("model_selected", data)
 

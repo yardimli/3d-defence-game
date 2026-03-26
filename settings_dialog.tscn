@@ -1,5 +1,7 @@
 [gd_scene format=3 uid="uid://i13de173m1so"]
+
 [ext_resource type="Script" uid="uid://6npf2ygqwhqp" path="res://settings_dialog.gd" id="1_xyz12"]
+
 [node name="SettingsDialog" type="Window" unique_id=200100200]
 oversampling_override = 1.0
 title = "Editor Settings"
@@ -51,7 +53,6 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 min_value = 0.01
-max_value = 100.0
 step = 0.01
 value = 1.0
 
@@ -67,7 +68,6 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 min_value = -100.0
-max_value = 100.0
 step = 0.01
 
 [node name="CamPosYSpinBox" type="SpinBox" parent="MarginContainer/VBoxContainer/GridContainer/CamPosHBox" unique_id=200100214]
@@ -75,7 +75,6 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 min_value = -100.0
-max_value = 100.0
 step = 0.01
 
 [node name="CamPosZSpinBox" type="SpinBox" parent="MarginContainer/VBoxContainer/GridContainer/CamPosHBox" unique_id=200100215]
@@ -83,12 +82,13 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 min_value = -100.0
-max_value = 100.0
 step = 0.01
 
 [node name="LabelLookAt" type="Label" parent="MarginContainer/VBoxContainer/GridContainer" unique_id=200100216]
 layout_mode = 2
-text = "Camera Look At:"[node name="LookAtHBox" type="HBoxContainer" parent="MarginContainer/VBoxContainer/GridContainer" unique_id=200100217]
+text = "Camera Look At:"
+
+[node name="LookAtHBox" type="HBoxContainer" parent="MarginContainer/VBoxContainer/GridContainer" unique_id=200100217]
 layout_mode = 2
 
 [node name="LookAtXSpinBox" type="SpinBox" parent="MarginContainer/VBoxContainer/GridContainer/LookAtHBox" unique_id=200100218]
@@ -96,7 +96,6 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 min_value = -100.0
-max_value = 100.0
 step = 0.01
 
 [node name="LookAtYSpinBox" type="SpinBox" parent="MarginContainer/VBoxContainer/GridContainer/LookAtHBox" unique_id=200100219]
@@ -104,7 +103,6 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 min_value = -100.0
-max_value = 100.0
 step = 0.01
 
 [node name="LookAtZSpinBox" type="SpinBox" parent="MarginContainer/VBoxContainer/GridContainer/LookAtHBox" unique_id=200100220]
@@ -112,21 +110,25 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 min_value = -100.0
-max_value = 100.0
 step = 0.01
+
 [node name="HSeparator2" type="HSeparator" parent="MarginContainer/VBoxContainer" unique_id=200100300]
 layout_mode = 2
+
 [node name="LabelSkybox" type="Label" parent="MarginContainer/VBoxContainer" unique_id=200100301]
 layout_mode = 2
 theme_override_font_sizes/font_size = 18
 text = "Skybox Settings"
 horizontal_alignment = 1
+
 [node name="GridContainerSkybox" type="GridContainer" parent="MarginContainer/VBoxContainer" unique_id=200100302]
 layout_mode = 2
 columns = 2
+
 [node name="LabelCloudDensity" type="Label" parent="MarginContainer/VBoxContainer/GridContainerSkybox" unique_id=200100303]
 layout_mode = 2
 text = "Cloud Density:"
+
 [node name="CloudDensitySlider" type="HSlider" parent="MarginContainer/VBoxContainer/GridContainerSkybox" unique_id=200100304]
 unique_name_in_owner = true
 layout_mode = 2
@@ -134,9 +136,11 @@ size_flags_horizontal = 3
 size_flags_vertical = 4
 max_value = 1.0
 step = 0.01
+
 [node name="LabelCloudSpeed" type="Label" parent="MarginContainer/VBoxContainer/GridContainerSkybox" unique_id=200100305]
 layout_mode = 2
 text = "Cloud Speed:"
+
 [node name="CloudSpeedSlider" type="HSlider" parent="MarginContainer/VBoxContainer/GridContainerSkybox" unique_id=200100306]
 unique_name_in_owner = true
 layout_mode = 2
@@ -144,55 +148,69 @@ size_flags_horizontal = 3
 size_flags_vertical = 4
 max_value = 1.0
 step = 0.01
+
 [node name="HSeparator3" type="HSeparator" parent="MarginContainer/VBoxContainer" unique_id=200100307]
 layout_mode = 2
+
 [node name="LabelTerrain" type="Label" parent="MarginContainer/VBoxContainer" unique_id=200100308]
 layout_mode = 2
 theme_override_font_sizes/font_size = 18
 text = "Terrain Settings"
 horizontal_alignment = 1
+
 [node name="GridContainerTerrain" type="GridContainer" parent="MarginContainer/VBoxContainer" unique_id=200100309]
 layout_mode = 2
 columns = 2
+
 [node name="LabelWidth" type="Label" parent="MarginContainer/VBoxContainer/GridContainerTerrain" unique_id=200100310]
 layout_mode = 2
 text = "Width (Tiles):"
+
 [node name="TerrainWidthSpinBox" type="SpinBox" parent="MarginContainer/VBoxContainer/GridContainerTerrain" unique_id=200100311]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 min_value = 10.0
 max_value = 500.0
+value = 10.0
+
 [node name="LabelDepth" type="Label" parent="MarginContainer/VBoxContainer/GridContainerTerrain" unique_id=200100312]
 layout_mode = 2
 text = "Depth (Tiles):"
+
 [node name="TerrainDepthSpinBox" type="SpinBox" parent="MarginContainer/VBoxContainer/GridContainerTerrain" unique_id=200100313]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 min_value = 10.0
 max_value = 500.0
+value = 10.0
+
 [node name="LabelTreeDensity" type="Label" parent="MarginContainer/VBoxContainer/GridContainerTerrain" unique_id=200100314]
 layout_mode = 2
 text = "Tree Density (%):"
+
 [node name="TreeDensitySpinBox" type="SpinBox" parent="MarginContainer/VBoxContainer/GridContainerTerrain" unique_id=200100315]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-max_value = 100.0
 step = 0.1
+
 [node name="Control" type="Control" parent="MarginContainer/VBoxContainer" unique_id=200100204]
 layout_mode = 2
 size_flags_vertical = 3
+
 [node name="HBoxContainer" type="HBoxContainer" parent="MarginContainer/VBoxContainer" unique_id=200100221]
 layout_mode = 2
 alignment = 2
+
 [node name="ApplyButton" type="Button" parent="MarginContainer/VBoxContainer/HBoxContainer" unique_id=200100222]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 4
 theme_override_font_sizes/font_size = 18
 text = "  Apply  "
+
 [node name="CloseButton" type="Button" parent="MarginContainer/VBoxContainer/HBoxContainer" unique_id=200100205]
 unique_name_in_owner = true
 layout_mode = 2

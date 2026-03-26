@@ -27,7 +27,6 @@ func _ready():
 	save_button.pressed.connect(_on_save_pressed)
 	load_button.pressed.connect(_on_load_pressed)
 	scene_list.item_selected.connect(_on_scene_selected)
-	# MODIFIED: Connect item_activated to its own dedicated handler.
 	scene_list.item_activated.connect(_on_item_activated)
 	scene_name_edit.text_changed.connect(_on_scene_name_text_changed)
 	close_requested.connect(hide)
@@ -89,7 +88,7 @@ func _on_load_pressed():
 		emit_signal("load_requested", scene_name)
 		hide()
 
-# NEW: Handles the item_activated signal from the ItemList (double-click or Enter).
+# Handles the item_activated signal from the ItemList (double-click or Enter).
 func _on_item_activated(index: int):
 	# The signal provides the index directly, which is more reliable than checking selection.
 	var scene_name = scene_list.get_item_text(index)

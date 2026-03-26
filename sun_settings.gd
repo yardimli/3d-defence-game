@@ -16,7 +16,7 @@ signal sun_updated(settings: Dictionary)
 @onready var update_btn: Button = %UpdateButton
 
 func _ready():
-	# NEW: Make the window modal, which blocks input to the main scene when visible.
+	# Make the window modal, which blocks input to the main scene when visible.
 	exclusive = true
 	
 	# Connect signals from UI elements to their handlers.

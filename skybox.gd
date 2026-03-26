@@ -22,7 +22,7 @@ func _ready():
 	# Prevent the fog from applying to the skybox so the clouds remain visible
 	env.fog_sky_affect = 0.0 
 	
-	# MODIFIED: Decouple ambient lighting from the skybox visuals.
+	# Decouple ambient lighting from the skybox visuals.
 	# This prevents the map from getting brighter when cloud density increases.
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.ambient_light_color = Color(0.55, 0.65, 0.75) # A steady, soft sky-blue ambient light

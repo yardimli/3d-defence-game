@@ -1,6 +1,6 @@
 extends Node3D
 
-# NEW: Enum to manage camera behavior modes
+# Enum to manage camera behavior modes
 enum Mode { MANUAL, DEMO, FOLLOW }
 
 # --- State ---
@@ -8,34 +8,32 @@ var cam_zoom := 10.0
 var cam_rot_x := -45.0
 var cam_rot_y := 45.0
 
-# NEW: State variables for automated modes
+# State variables for automated modes
 var mode: Mode = Mode.MANUAL
 var follow_target: Node3D = null
 var demo_timer := 0.0
 var demo_transition_speed := 1.0
 
-# MODIFIED: A multiplier to control the overall speed of the demo camera transitions.
-# The default value has been lowered to 0.25 for a much slower, smoother experience.
 @export var demo_speed_multiplier := 0.25
 
 @onready var camera: Camera3D = %Camera3D
 
 # --- Public API for Level Editor ---
 
-# NEW: Starts the automated demo camera sequence
+# Starts the automated demo camera sequence
 func start_demo_mode():
 	mode = Mode.DEMO
 	follow_target = null
 	_set_new_demo_target() # Initialize with a random target
 
-# NEW: Starts following a specific Node3D target
+# Starts following a specific Node3D target
 func start_follow_mode(target: Node3D):
 	if not is_instance_valid(target):
 		return
 	mode = Mode.FOLLOW
 	follow_target = target
 
-# NEW: Resets the camera to manual user control
+# Resets the camera to manual user control
 func stop_automated_modes():
 	mode = Mode.MANUAL
 	follow_target = null
@@ -55,7 +53,6 @@ func set_config(zoom: float, rot_x: float, rot_y: float):
 		camera.position.z = cam_zoom
 
 func _process(delta):
-	# MODIFIED: Use a match statement to handle different camera modes
 	match mode:
 		Mode.MANUAL:
 			_process_manual(delta)
@@ -64,8 +61,7 @@ func _process(delta):
 		Mode.FOLLOW:
 			_process_follow(delta)
 	
-	# NEW: Final check to prevent the camera from going through the ground.
-	# This lifts the entire pivot if the camera's final position is too low.
+	# Final check to prevent the camera from going through the ground. This lifts the entire pivot if the camera's final position is too low.
 	# A small positive value (0.5) is used as a threshold to avoid clipping.
 	var cam_global_y = camera.get_global_transform().origin.y
 	if cam_global_y < 0.5:
@@ -73,14 +69,13 @@ func _process(delta):
 
 # --- Mode-specific Process Logic ---
 
-# NEW: Contains the original lerp logic for manual control
+# Contains the original lerp logic for manual control
 func _process_manual(delta):
 	rotation_degrees.x = lerp(rotation_degrees.x, cam_rot_x, delta * 15.0)
 	rotation_degrees.y = lerp(rotation_degrees.y, cam_rot_y, delta * 15.0)
 	if camera:
 		camera.position.z = lerp(camera.position.z, cam_zoom, delta * 10.0)
 
-# MODIFIED: Logic for the automated demo camera updated for smoother rotation
 func _process_demo(delta):
 	demo_timer -= delta
 	if demo_timer <= 0:
@@ -93,13 +88,13 @@ func _process_demo(delta):
 		camera.position.z = lerp(camera.position.z, cam_zoom, delta * current_speed)
 	global_position = global_position.lerp(Vector3.ZERO, delta * current_speed * 0.5) # Gently re-center
 
-	# MODIFIED: Use `lerp_angle` for rotation. This function correctly handles wrapping
+	# Use `lerp_angle` for rotation. This function correctly handles wrapping
 	# (e.g., from 350 degrees to 10 degrees) by taking the shortest path,
 	# which prevents the camera from spinning wildly.
 	rotation_degrees.x = rad_to_deg(lerp_angle(deg_to_rad(rotation_degrees.x), deg_to_rad(cam_rot_x), delta * current_speed))
 	rotation_degrees.y = rad_to_deg(lerp_angle(deg_to_rad(rotation_degrees.y), deg_to_rad(cam_rot_y), delta * current_speed))
 
-# NEW: Logic for following a target node
+# Logic for following a target node
 func _process_follow(delta):
 	if not is_instance_valid(follow_target):
 		# If the target is lost (e.g., deleted), revert to manual mode
@@ -117,7 +112,6 @@ func _process_follow(delta):
 		
 # --- Helper Methods ---
 
-# NEW: Sets a new random target for the demo camera
 func _set_new_demo_target():
 	demo_timer = randf_range(4.0, 8.0) # Stay at the target for 4-8 seconds
 	demo_transition_speed = randf_range(0.5, 1.5) # Vary the transition speed
@@ -129,8 +123,6 @@ func _set_new_demo_target():
 			cam_rot_y = randf_range(0, 360)
 			cam_zoom = randf_range(20.0, 40.0)
 		1: # Ground level view
-			# MODIFIED: Lowered the minimum angle and allowed it to go slightly above the horizon
-			# to make the sky visible.
 			cam_rot_x = randf_range(-15.0, 5.0)
 			cam_rot_y = randf_range(0, 360)
 			cam_zoom = randf_range(5.0, 15.0)
@@ -144,12 +136,12 @@ func _set_new_demo_target():
 
 # Extracted input handling for camera
 func handle_input(event: InputEvent) -> bool:
-	# MODIFIED: Disable panning input when in an automated mode
+	# Disable panning input when in an automated mode
 	if mode == Mode.DEMO:
 		return false # Ignore all camera input in demo mode
 
 	if event is InputEventMouseMotion:
-		# MODIFIED: Disable panning when following a car, but allow rotation
+		# Disable panning when following a car, but allow rotation
 		if Input.is_mouse_button_pressed(MOUSE_BUTTON_MIDDLE) or (Input.is_key_pressed(KEY_SHIFT) and Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)):
 			if mode == Mode.FOLLOW:
 				return true # Consume input but do nothing
@@ -159,14 +151,13 @@ func handle_input(event: InputEvent) -> bool:
 			forward = forward.normalized()
 			var pan_speed = 0.001 * cam_zoom
 			global_position -= (right * event.relative.x + forward * event.relative.y) * pan_speed
-			# NEW: Clamp the pivot's Y position to prevent it from being panned below the ground plane.
+			# Clamp the pivot's Y position to prevent it from being panned below the ground plane.
 			global_position.y = max(global_position.y, 0.0)
 			return true
 		elif Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
 			# Rotation works in both MANUAL and FOLLOW modes
 			cam_rot_y -= event.relative.x * 0.4
 			cam_rot_x -= event.relative.y * 0.4
-			# MODIFIED: Increased the upper clamp to allow looking up further, matching the new demo mode range.
 			cam_rot_x = clamp(cam_rot_x, -89.0, 5.0)
 			return true
 	elif event is InputEventPanGesture:

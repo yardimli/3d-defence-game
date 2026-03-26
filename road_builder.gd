@@ -37,11 +37,10 @@ func initialize(editor, container, data):
 	grid_data = data
 
 func place_road(grid_pos: Vector2):
-	# MODIFIED: Prevent placing outside bounds
 	if not level_editor._is_within_terrain_bounds(grid_pos):
 		return
 	
-	# NEW: Check if placing a road here would create a 2x2 block of roads,
+	# Check if placing a road here would create a 2x2 block of roads,
 	# which prevents parallel roads without a gap.
 	if _forms_a_block(grid_pos):
 		print("Cannot place road: would create parallel roads without a gap.")
@@ -84,7 +83,7 @@ func get_road_node_at(grid_pos: Vector2) -> Node3D:
 
 # --- Internal Logic ---
 
-# NEW: A function to check if placing a road at the given position
+# A function to check if placing a road at the given position
 # would complete a 2x2 block of road tiles. This is used to enforce
 # the rule that parallel roads must have at least one empty tile between them.
 func _forms_a_block(grid_pos: Vector2) -> bool:

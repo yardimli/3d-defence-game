@@ -3,16 +3,12 @@ extends Node3D
 # --- Config ---
 @export var vehicle_speed: float = 2.0
 @export var vehicle_spacing: float = 0.75
-
-# NEW: Variable to control how far from the red light the cars should stop
 @export var stop_distance_from_light: float = 0.5
 
 # Global flag to draw debug bounding boxes for all spawned cars.
-# This can be enabled from the Godot Editor's Inspector panel.
 @export var draw_debug_bounding_boxes: bool = false
 
 # Array to configure different vehicle models.
-# Each dictionary includes a "bounding_box_size" to define the collision area.
 var vehicle_models =[
 	{
 		"path": "res://models/car-kit/ambulance.glb",
@@ -130,7 +126,7 @@ func spawn_car():
 		printerr("Failed to create vehicle instance. Check model paths.")
 		return
 	
-	# NEW: Set the car's initial position and rotation *before* adding it to the scene.
+	# Set the car's initial position and rotation *before* adding it to the scene.
 	# This prevents the car from spawning at the world origin and having to snap to the track,
 	# which could cause it to collide with other objects and get stuck.
 	var initial_transform = seg.curve.sample_baked_with_rotation(progress, false, false)
@@ -140,7 +136,7 @@ func spawn_car():
 	
 	var car_data = {
 		"node": vehicle_instance_data["root"],
-		"collision_shape": vehicle_instance_data["shape"], # MODIFIED: Store a direct reference to the collision shape
+		"collision_shape": vehicle_instance_data["shape"], # Store a direct reference to the collision shape
 		"config": vehicle_instance_data["config"],
 		"segment": seg,
 		"progress": progress,
@@ -154,7 +150,6 @@ func spawn_car():
 		"uturn_target_seg": null,
 		"uturn_target_offset": 0.0,
 		"chosen_next_segment": null
-		# MODIFIED: Removed overtake state variables
 	}
 	
 	active_vehicles.append(car_data)
@@ -204,13 +199,13 @@ func _create_vehicle_instance() -> Dictionary:
 		debug_mesh_instance.position.y = bbox_size.y / 2.0
 		physics_body.add_child(debug_mesh_instance)
 		
-	return {"root": physics_body, "config": car_config, "shape": shape} # MODIFIED: Return the collision shape node as well
+	return {"root": physics_body, "config": car_config, "shape": shape}
 
 func _unhandled_input(event):
 	if not camera: return
 	
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
-		# MODIFIED: If the level editor is waiting for a car to follow, do not handle the input here.
+		# If the level editor is waiting for a car to follow, do not handle the input here.
 		# This allows the level_editor's own input handler to process the click and start the follow camera.
 		if level_editor.is_follow_car_mode_active:
 			return
@@ -257,14 +252,12 @@ func _unhandled_input(event):
 					dragged_car.segment = closest_seg
 					dragged_car.progress = best_progress
 					dragged_car.state = "driving"
-					# MODIFIED: Removed overtake state reset
 					_pick_next_segment(dragged_car)
 				else:
 					dragged_car.node.global_position = drag_original_pos
 					dragged_car.segment = drag_original_segment
 					dragged_car.progress = drag_original_progress
 					dragged_car.state = "driving"
-					# MODIFIED: Removed overtake state reset
 					_pick_next_segment(dragged_car)
 
 				dragged_car = null
@@ -301,7 +294,6 @@ func on_track_regenerated():
 			car.segment = best_seg
 			car.progress = best_progress
 			car.state = "driving"
-			# MODIFIED: Removed overtake state reset
 			_pick_next_segment(car)
 		else:
 			car.segment = null
@@ -321,7 +313,6 @@ func _physics_process(delta: float):
 			var target_track_xform = car.uturn_target_seg.curve.sample_baked_with_rotation(car.uturn_target_offset, false, false)
 			var target_basis = target_track_xform.basis
 			var target_origin = target_track_xform.origin
-			# MODIFIED: Removed y-offset to prevent car from floating during a u-turn.
 			
 			car.node.global_position = car.uturn_start_pos.lerp(target_origin, t)
 			car.node.global_transform.basis = car.uturn_start_basis.slerp(target_basis, t)
@@ -337,21 +328,17 @@ func _physics_process(delta: float):
 		var seg = car.segment
 		if not seg or not seg.curve: continue
 		
-		# --- MODIFIED: Intersection Collision Handling ---
 		# When a car is on an intersection segment, disable its collision shape
 		# to prevent it from colliding with other cars. Re-enable it otherwise.
 		if is_instance_valid(car.collision_shape):
 			car.collision_shape.disabled = seg.is_intersection
-		# --- END MODIFIED ---
-
-		# MODIFIED: Removed Overtake Logic block from here
 
 		# Handle wait time after collisions.
 		if car.wait_time > 0.0:
 			car.wait_time -= delta
 			car.current_speed = move_toward(car.current_speed, 0.0, delta * 5.0)
 		else:
-			# MODIFIED: Adaptive Cruise Control (ACC) to maintain vehicle_spacing
+			# Adaptive Cruise Control (ACC) to maintain vehicle_spacing
 			var forward = -car.node.global_transform.basis.z
 			var target_speed = car.base_speed
 			var car_ahead_detected = false
@@ -368,7 +355,7 @@ func _physics_process(delta: float):
 					var dir_to_other = to_other / dist
 					# Check if the other car is in front (dot product > 0.7 means ~45 degrees)
 					if forward.dot(dir_to_other) > 0.7:
-						# NEW: Ensure the other car is facing roughly the same direction.
+						# Ensure the other car is facing roughly the same direction.
 						# This prevents detecting cars in the opposite lane coming towards us.
 						var other_forward = -other_car.node.global_transform.basis.z
 						if forward.dot(other_forward) > 0.5:
@@ -398,7 +385,7 @@ func _physics_process(delta: float):
 		# --- Segment Transition Logic ---
 		var curve_len = seg.curve.get_baked_length()
 		
-		# MODIFIED: Check for red lights and stop before the intersection based on stop_distance_from_light
+		# Check for red lights and stop before the intersection based on stop_distance_from_light
 		var next_seg = car.chosen_next_segment
 		if next_seg == null and seg.next_segments.size() > 0:
 			next_seg = seg.next_segments.pick_random()
@@ -407,7 +394,7 @@ func _physics_process(delta: float):
 		if next_seg != null and next_seg.is_red_light:
 			var stop_point = max(0.0, curve_len - stop_distance_from_light)
 			if projected_progress > stop_point and car.progress < curve_len:
-				# MODIFIED: Clamp projected_progress to stop_point, or to current progress if already past it.
+				# Clamp projected_progress to stop_point, or to current progress if already past it.
 				# This prevents creeping forward due to floating point inaccuracies.
 				projected_progress = min(projected_progress, max(car.progress, stop_point))
 				car.current_speed = 0.0
@@ -437,23 +424,18 @@ func _physics_process(delta: float):
 		if car.state == "driving":
 			var target_transform = seg.curve.sample_baked_with_rotation(projected_progress, false, false)
 			var target_origin = target_transform.origin
-			# MODIFIED: Removed y-offset to prevent car from floating above the road.
-			# The car's position is now taken directly from the track curve.
-			
-			# MODIFIED: Removed overtake lateral offset application
-			
 			var motion = target_origin - car.node.global_position
 			var collision = car.node.move_and_collide(motion)
 			
 			if collision:
-				# MODIFIED: Only trigger the crash response if the collision is in front of the car.
+				# Only trigger the crash response if the collision is in front of the car.
 				# This prevents the car from stopping when hit from behind or the side on corners.
 				var forward = -car.node.global_transform.basis.z
 				var hit_normal = collision.get_normal()
 				
 				# If the dot product is negative, the surface normal is facing the car (frontal crash)
 				if forward.dot(hit_normal) < -0.2:
-					# MODIFIED: Reverted to original collision fallback, removed overtake behavior
+					# Reverted to original collision fallback
 					car.current_speed = -car.base_speed * 0.4
 					car.wait_time = randf_range(0.25, 0.75) 
 							
@@ -464,7 +446,7 @@ func _physics_process(delta: float):
 			var actual_transform = seg.curve.sample_baked_with_rotation(car.progress, false, false)
 			car.node.global_transform.basis = actual_transform.basis
 
-# MODIFIED: This function now checks for cars on upcoming segments before choosing.
+# This function now checks for cars on upcoming segments before choosing.
 func _pick_next_segment(car: Dictionary):
 	# If there's no current segment or no available next paths, clear the choice and exit.
 	if not car.segment or car.segment.next_segments.is_empty():
@@ -478,7 +460,7 @@ func _pick_next_segment(car: Dictionary):
 		car.chosen_next_segment = next_options[0]
 		return
 		
-	# NEW: Find all segments that are not occupied by a car near the entrance.
+	# Find all segments that are not occupied by a car near the entrance.
 	var clear_segments: Array = []
 	for potential_seg in next_options:
 		var is_occupied = false
@@ -493,12 +475,12 @@ func _pick_next_segment(car: Dictionary):
 		if not is_occupied:
 			clear_segments.append(potential_seg)
 			
-	# NEW: Prioritize choosing from clear segments.
+	# Prioritize choosing from clear segments.
 	if not clear_segments.is_empty():
 		# If there are clear paths, pick a random one from them.
 		car.chosen_next_segment = clear_segments.pick_random()
 	else:
-		# MODIFIED: If all paths are occupied, fall back to picking any random path.
+		# If all paths are occupied, fall back to picking any random path.
 		car.chosen_next_segment = next_options.pick_random()
 
 
@@ -531,7 +513,6 @@ func _start_uturn(car: Dictionary):
 		car.uturn_target_seg = best_seg
 		car.uturn_target_offset = best_offset
 		car.wait_time = 0.0 
-		# MODIFIED: Removed overtake state reset
 	else:
 		car.node.rotate_y(PI)
 		car.progress = max(0.0, car.progress - 0.1)

@@ -1,7 +1,7 @@
 class_name LevelSerializer
 extends RefCounted
 
-# NEW: Extracted save logic
+# Extracted save logic
 static func save_scene(scene_name: String, grid_data: Dictionary, sun_light: DirectionalLight3D, model_scale: float, save_dir: String):
 	var level_data_array =[]
 	for grid_pos in grid_data:
@@ -29,7 +29,7 @@ static func save_scene(scene_name: String, grid_data: Dictionary, sun_light: Dir
 	file.store_string(JSON.stringify(full_save_data, "\t"))
 	file.close()
 
-# NEW: Extracted load logic
+# Extracted load logic
 static func load_scene(scene_name: String, grid_data: Dictionary, placed_models_container: Node3D, sun_light: DirectionalLight3D, default_model_scale: float, tile_x: float, tile_z: float, save_dir: String) -> bool:
 	var save_path = save_dir.path_join(scene_name + ".json")
 	if not FileAccess.file_exists(save_path): 

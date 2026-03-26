@@ -23,7 +23,7 @@ var loaded_deco_tiles =[]
 
 # Container to hold all generated terrain pieces
 var terrain_container: Node3D
-var level_editor: Node3D # NEW: Reference to the main editor for placing trees
+var level_editor: Node3D # Reference to the main editor for placing trees
 
 func _ready():
 	# Preload scenes for faster generation
@@ -36,7 +36,6 @@ func _ready():
 
 # --- Public API ---
 
-# MODIFIED: Now accepts a reference to the level editor
 func initialize(editor_tile_x: float, editor_tile_z: float, editor_ref: Node3D):
 	tile_x = editor_tile_x
 	tile_z = editor_tile_z
@@ -61,14 +60,14 @@ func set_settings(width: int, depth: int, density: float):
 
 # --- Internal Logic ---
 
-# NEW: Helper to find all mesh instances within a loaded scene
+# Helper to find all mesh instances within a loaded scene
 func _get_all_mesh_instances(node: Node, result: Array):
 	if node is MeshInstance3D:
 		result.append(node)
 	for child in node.get_children():
 		_get_all_mesh_instances(child, result)
 
-# MODIFIED: Generates a single readonly mesh for ground and places trees as normal assets
+# Generates a single readonly mesh for ground and places trees as normal assets
 func generate_terrain():
 	# Clear existing terrain mesh
 	for child in terrain_container.get_children():
@@ -152,7 +151,7 @@ func generate_terrain():
 			if randf() < tree_density and loaded_deco_tiles.size() > 0:
 				_place_tree_asset(pos_x, pos_z)
 
-# NEW: Places a tree as a normal editor asset
+# Places a tree as a normal editor asset
 func _place_tree_asset(pos_x: float, pos_z: float):
 	if not level_editor: return
 	
