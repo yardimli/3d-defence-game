@@ -129,6 +129,12 @@ func spawn_car():
 	if vehicle_instance_data.is_empty():
 		printerr("Failed to create vehicle instance. Check model paths.")
 		return
+	
+	# NEW: Set the car's initial position and rotation *before* adding it to the scene.
+	# This prevents the car from spawning at the world origin and having to snap to the track,
+	# which could cause it to collide with other objects and get stuck.
+	var initial_transform = seg.curve.sample_baked_with_rotation(progress, false, false)
+	vehicle_instance_data["root"].global_transform = initial_transform
 		
 	add_child(vehicle_instance_data["root"])
 	

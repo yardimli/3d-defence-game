@@ -63,6 +63,13 @@ func _process(delta):
 			_process_demo(delta)
 		Mode.FOLLOW:
 			_process_follow(delta)
+	
+	# NEW: Final check to prevent the camera from going through the ground.
+	# This lifts the entire pivot if the camera's final position is too low.
+	# A small positive value (0.5) is used as a threshold to avoid clipping.
+	var cam_global_y = camera.get_global_transform().origin.y
+	if cam_global_y < 0.5:
+		global_position.y += 0.5 - cam_global_y
 
 # --- Mode-specific Process Logic ---
 
@@ -152,6 +159,8 @@ func handle_input(event: InputEvent) -> bool:
 			forward = forward.normalized()
 			var pan_speed = 0.001 * cam_zoom
 			global_position -= (right * event.relative.x + forward * event.relative.y) * pan_speed
+			# NEW: Clamp the pivot's Y position to prevent it from being panned below the ground plane.
+			global_position.y = max(global_position.y, 0.0)
 			return true
 		elif Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
 			# Rotation works in both MANUAL and FOLLOW modes

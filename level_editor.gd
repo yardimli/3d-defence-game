@@ -555,11 +555,18 @@ func _on_grid_snap_toggled(should_snap: bool):
 # ==========================================
 
 func _handle_right_click_delete(mouse_pos: Vector2) -> bool:
+	# MODIFIED: Check for valid deletion mode *before* updating the cursor.
+	# This prevents the cursor from moving when right-click is used for other actions (like camera rotation).
+	var is_asset_selected = not selected_model_path.is_empty()
+	if not is_asset_selected and not is_road_builder_enabled:
+		return false
+
 	var grid_pos = _get_grid_pos_from_mouse(mouse_pos)
 	
 	if grid_pos == Vector2.INF or not _is_within_terrain_bounds(grid_pos):
 		return false
-		
+	
+	# MODIFIED: The cursor is now updated only when a right-click delete is possible.
 	_update_cursor(mouse_pos)
 
 	if not grid_data.has(grid_pos) or grid_data[grid_pos].is_empty():
@@ -569,8 +576,6 @@ func _handle_right_click_delete(mouse_pos: Vector2) -> bool:
 	var instance_to_delete: Node3D = null
 	var was_road = false
 
-	var is_asset_selected = not selected_model_path.is_empty()
-
 	if is_asset_selected:
 		var top_model = models_on_tile.back()
 		if is_instance_valid(top_model) and top_model.get_meta("model_path") == selected_model_path:
@@ -579,15 +584,12 @@ func _handle_right_click_delete(mouse_pos: Vector2) -> bool:
 		else:
 			return false
 			
-	else:
-		if is_road_builder_enabled:
-			for model in models_on_tile:
-				if is_instance_valid(model) and model.get_meta("is_road", false):
-					instance_to_delete = model
-					was_road = true
-					break
-		else:
-			return false
+	else: # This block is only reached if is_road_builder_enabled is true due to the check at the top.
+		for model in models_on_tile:
+			if is_instance_valid(model) and model.get_meta("is_road", false):
+				instance_to_delete = model
+				was_road = true
+				break
 
 	if not is_instance_valid(instance_to_delete):
 		return false
@@ -660,6 +662,7 @@ func _unhandled_input(event):
 			
 	elif event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
+			# MODIFIED: The function call was updated to pass the mouse position directly.
 			if _handle_right_click_delete(mouse_pos):
 				get_viewport().set_input_as_handled()
 				return
