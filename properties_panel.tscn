@@ -29,6 +29,17 @@ horizontal_alignment = 1
 [node name="HSeparator" type="HSeparator" parent="MarginContainer/VBoxContainer" unique_id=281292654]
 layout_mode = 2
 
+[node name="AssetNameLabel" type="Label" parent="MarginContainer/VBoxContainer" unique_id=2000000001]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "asset_name"
+horizontal_alignment = 1
+autowrap_mode = 3
+
+[node name="HSeparator4" type="HSeparator" parent="MarginContainer/VBoxContainer" unique_id=2000000002]
+layout_mode = 2
+
 [node name="Label2" type="Label" parent="MarginContainer/VBoxContainer" unique_id=379198299]
 layout_mode = 2
 text = "Position"

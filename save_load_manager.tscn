@@ -49,6 +49,13 @@ layout_mode = 2
 size_flags_horizontal = 3
 text = "Load"
 
+[node name="DeleteButton" type="Button" parent="MarginContainer/VBoxContainer/HBoxContainer" unique_id=2000000003]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(1, 0.5, 0.5, 1)
+text = "Delete"
+
 [node name="HSeparator" type="HSeparator" parent="MarginContainer/VBoxContainer" unique_id=1990625597]
 layout_mode = 2
 
@@ -60,3 +67,10 @@ text = "Existing Scenes:"
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
+
+[node name="ConfirmDeleteDialog" type="ConfirmationDialog" parent="." unique_id=2000000004]
+unique_name_in_owner = true
+title = "Confirm Deletion"
+initial_position = 2
+size = Vector2i(300, 100)
+dialog_text = "Are you sure you want to permanently delete this file?"
