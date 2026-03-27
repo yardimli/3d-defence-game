@@ -46,7 +46,7 @@ var intersections: Array[TrafficIntersection] =[]
 class TrafficIntersection extends RefCounted:
 	var grid_pos: Vector2
 	var phase: int = 0 # Even numbers = Green for a specific entry, Odd numbers = All Red
-	var timer: float = 0.0 # MODIFIED: This is now a simple float, managed by a central process loop.
+	var timer: float = 0.0
 	
 	# Store entries dynamically to allow one-by-one green lights
 	# Each dictionary contains: {"dir": Vector3, "segments": Array[TrackSegment], "visuals": Array[MeshInstance3D]}
@@ -99,7 +99,7 @@ func initialize(editor: Node3D):
 		
 	generate_tracks()
 
-# NEW: Centralized process loop to manage all intersection timers.
+# Centralized process loop to manage all intersection timers.
 # This is much more performant than creating a separate Timer node for each intersection.
 func _process(delta: float):
 	# Iterate through all active intersections.
@@ -111,7 +111,7 @@ func _process(delta: float):
 		if inter.timer <= 0:
 			_advance_intersection_phase(inter)
 
-# MODIFIED: This function is now called by the central _process loop, not a Timer node.
+# This function is called by the central _process loop.
 func _advance_intersection_phase(inter: TrafficIntersection):
 	var num_entries = inter.entries.size()
 	if num_entries == 0: return
@@ -202,7 +202,7 @@ func _get_road_type(model_path: String) -> String:
 
 # Generates the track graph, assigns colors for debugging, and sets up traffic lights.
 func generate_tracks():
-	# MODIFIED: Clear all previous track and intersection data.
+	# Clear all previous track and intersection data.
 	# The old RefCounted TrafficIntersection objects will be freed automatically.
 	track_segments.clear()
 	intersections.clear()

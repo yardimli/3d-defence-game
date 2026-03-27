@@ -14,7 +14,6 @@ var _is_updating := false # Prevents signals from firing when populating fields.
 var _selected_node: Node3D = null
 
 # --- Node-Referenzen ---
-# MODIFIED: Added a reference to the new asset name label.
 @onready var asset_name_label: Label = %AssetNameLabel
 @onready var grid_pos_label: Label = %GridPosLabel
 @onready var pos_x_spinbox: SpinBox = %PosXSpinBox
@@ -49,7 +48,6 @@ func update_fields(node: Node3D, models_on_tile: Array, grid_pos: Vector2):
 	_is_updating = true
 	_selected_node = node
 	
-	# MODIFIED: Update the asset name label.
 	# We get the model path from metadata and extract the filename.
 	var model_path = node.get_meta("model_path", "Unknown")
 	asset_name_label.text = model_path.get_file()
@@ -78,7 +76,6 @@ func update_fields(node: Node3D, models_on_tile: Array, grid_pos: Vector2):
 func clear_and_hide():
 	_is_updating = true
 	_selected_node = null
-	# MODIFIED: Clear the asset name label when hiding.
 	asset_name_label.text = ""
 	pos_x_spinbox.value = 0
 	pos_y_spinbox.value = 0

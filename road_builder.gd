@@ -36,7 +36,7 @@ func initialize(editor, container, data):
 	placed_models_container = container
 	grid_data = data
 
-# NEW: Public wrapper to check for a road at a specific grid position.
+# Public wrapper to check for a road at a specific grid position.
 # This allows other modules, like the level editor, to query road locations
 # without accessing private methods.
 func is_road_at(grid_pos: Vector2) -> bool:

@@ -113,7 +113,7 @@ func initialize(editor: Node3D, track_gen: Node3D, cam: Camera3D):
 	
 	track_generator.track_regenerated.connect(on_track_regenerated)
 
-# MODIFIED: This function now spawns a car at a specific position, not randomly.
+# This function now spawns a car at a specific position.
 # It finds the closest road segment and checks for other nearby cars.
 # It returns 'true' on success and 'false' on failure.
 func spawn_car(spawn_position: Vector3) -> bool:
