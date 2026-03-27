@@ -59,6 +59,19 @@ layout_mode = 2
 size_flags_horizontal = 3
 text = "(0, 0)"
 
+[node name="Label4" type="Label" parent="MarginContainer/VBoxContainer/HBoxContainer" unique_id=2000000010]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 0.5
+text = "Size:"
+horizontal_alignment = 2
+
+[node name="TileSizeLabel" type="Label" parent="MarginContainer/VBoxContainer/HBoxContainer" unique_id=2000000011]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "1x1"
+
 [node name="PosGrid" type="GridContainer" parent="MarginContainer/VBoxContainer" unique_id=1037691935]
 layout_mode = 2
 columns = 2

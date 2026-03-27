@@ -1,6 +1,6 @@
 extends PanelContainer
 
-# Emits a dictionary with path and scale info.
+# Emits a dictionary with path, scale, and tile size info.
 signal model_selected(data: Dictionary)
 # Emitted when the selection should be cleared (e.g., right-click).
 signal selection_cleared
@@ -18,6 +18,9 @@ var folder_config: ConfigFile = null
 var current_folder_path: String = ""
 # Holds temporary override settings from the settings dialog.
 var preview_overrides: Dictionary = {}
+# --- Modified State ---
+# Holds the tile size for models in the current folder as an integer vector.
+var current_folder_tile_size := Vector2i(1, 1)
 
 # --- Node-Referenzen ---
 @onready var folder_dropdown: OptionButton = %FolderDropdown
@@ -116,6 +119,23 @@ func _on_folder_selected(index: int):
 		folder_config = sub_config
 	else:
 		folder_config = null # Reset if no config is found.
+		
+	# --- Modified Section ---
+	# Load tile size settings, ensuring they are cast to integers.
+	var size_x = 1
+	var size_z = 1
+	if folder_config and folder_config.has_section_key("Settings", "tile_size_x"):
+		size_x = int(folder_config.get_value("Settings", "tile_size_x"))
+	elif root_config.has_section_key("Settings", "tile_size_x"):
+		size_x = int(root_config.get_value("Settings", "tile_size_x"))
+		
+	if folder_config and folder_config.has_section_key("Settings", "tile_size_z"):
+		size_z = int(folder_config.get_value("Settings", "tile_size_z"))
+	elif root_config.has_section_key("Settings", "tile_size_z"):
+		size_z = int(root_config.get_value("Settings", "tile_size_z"))
+	
+	current_folder_tile_size = Vector2i(size_x, size_z)
+	# --- End Modified Section ---
 		
 	_populate_model_previews(current_folder_path)
 
@@ -279,7 +299,11 @@ func _on_model_button_pressed(path: String, btn: Button, scale: float):
 		selected_button.modulate = Color(0.4, 1.0, 0.4) # Highlight color
 		
 		# Inform the main editor of the selection, including the scale.
-		var data = {"path": path, "scale": scale}
+		var data = {
+			"path": path, 
+			"scale": scale,
+			"tile_size": current_folder_tile_size
+		}
 		emit_signal("model_selected", data)
 
 # Public method to clear the current selection.

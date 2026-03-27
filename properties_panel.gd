@@ -16,6 +16,7 @@ var _selected_node: Node3D = null
 # --- Node-Referenzen ---
 @onready var asset_name_label: Label = %AssetNameLabel
 @onready var grid_pos_label: Label = %GridPosLabel
+@onready var tile_size_label: Label = %TileSizeLabel
 @onready var pos_x_spinbox: SpinBox = %PosXSpinBox
 @onready var pos_y_spinbox: SpinBox = %PosYSpinBox
 @onready var pos_z_spinbox: SpinBox = %PosZSpinBox
@@ -58,6 +59,12 @@ func update_fields(node: Node3D, models_on_tile: Array, grid_pos: Vector2):
 	pos_y_spinbox.value = node.position.y
 	pos_z_spinbox.value = node.position.z
 	
+	# --- Modified Section ---
+	# Update the tile size display, providing a Vector2i as the default.
+	var tile_size = node.get_meta("tile_size", Vector2i(1, 1))
+	tile_size_label.text = "%sx%s" % [tile_size.x, tile_size.y]
+	# --- End Modified Section ---
+	
 	# Update scale field (assumes uniform scaling)
 	scale_spinbox.value = node.scale.x
 	
@@ -82,6 +89,8 @@ func clear_and_hide():
 	pos_z_spinbox.value = 0
 	scale_spinbox.value = 1
 	grid_pos_label.text = ""
+	# Clear the tile size label as well when no asset is selected.
+	tile_size_label.text = ""
 	_is_updating = false
 	hide()
 

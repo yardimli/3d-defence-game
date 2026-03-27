@@ -9,6 +9,8 @@ var model_scale := 1.0
 # --- State ---
 var selected_model_path := ""
 var selected_model_scale := 1.0
+# Store tile size for placing new assets as an integer vector.
+var selected_model_tile_size := Vector2i(1, 1)
 var grid_data := {}
 var ghost_instance: Node3D = null
 var placement_rotation_y := 0.0
@@ -99,6 +101,7 @@ func _ready():
 	_connect_ui_signals()
 	
 	var mesh = BoxMesh.new()                
+	# Initialize cursor to the default 1x1 tile size.
 	mesh.size = Vector3(tile_x, 0.1, tile_z) 
 	cursor.mesh = mesh                      
 
@@ -196,15 +199,23 @@ func _on_model_selected(data: Dictionary):
 	_deselect_instance()
 	selected_model_path = data.get("path", "")
 	selected_model_scale = data.get("scale", 1.0)
+	# Store the tile size from the asset selector, with a Vector2i default.
+	selected_model_tile_size = data.get("tile_size", Vector2i(1, 1))
 	_create_ghost(selected_model_path)
+	# Update the cursor to reflect the new asset's size immediately.
+	_update_cursor(get_viewport().get_mouse_position())
 
 func _deselect_model():
 	selected_model_path = ""
+	# Reset the tile size to a 1x1 Vector2i when deselecting.
+	selected_model_tile_size = Vector2i(1, 1)
 	if is_instance_valid(ghost_instance):
 		ghost_instance.queue_free()
 		ghost_instance = null
 	_deselect_instance()
 	asset_selector.clear_selection()
+	# Update the cursor to reset its size back to 1x1.
+	_update_cursor(get_viewport().get_mouse_position())
 
 func _create_ghost(path: String):
 	if is_instance_valid(ghost_instance):
@@ -215,6 +226,9 @@ func _create_ghost(path: String):
 		cursor.add_child(ghost_instance)
 		ghost_instance.scale = Vector3.ONE * selected_model_scale
 		ghost_instance.rotation_degrees.y = placement_rotation_y
+		# The ghost is a child of the cursor, which is centered.
+		# The ghost itself should be at the local origin of the cursor.
+		ghost_instance.position = Vector3.ZERO
 		_apply_ghost_material(ghost_instance)
 
 func _apply_ghost_material(node: Node):
@@ -243,6 +257,8 @@ func _select_instance(instance: Node3D):
 	_deselect_instance()
 	if selected_model_path != "":
 		selected_model_path = ""
+		# Reset placement tile size to a 1x1 Vector2i when selecting an existing instance.
+		selected_model_tile_size = Vector2i(1, 1)
 		if is_instance_valid(ghost_instance):
 			ghost_instance.queue_free()
 			ghost_instance = null
@@ -253,12 +269,16 @@ func _select_instance(instance: Node3D):
 	var grid_pos = GridUtils.get_grid_pos(selected_instance.position, tile_x, tile_z)
 	var models_on_tile = grid_data.get(grid_pos,[])
 	properties_panel.update_fields(selected_instance, models_on_tile, grid_pos)
+	# Update the cursor to match the size of the selected instance.
+	_update_cursor(get_viewport().get_mouse_position())
 
 func _deselect_instance():
 	if is_instance_valid(selected_instance):
 		_clear_material_overlay(selected_instance)
 		selected_instance = null
 		properties_panel.clear_and_hide()
+		# Update the cursor to reset its size back to 1x1.
+		_update_cursor(get_viewport().get_mouse_position())
 
 # ==========================================
 # BOUNDS CHECKING
@@ -277,9 +297,88 @@ func _get_grid_pos_from_mouse(mouse_pos: Vector2) -> Vector2:
 	if dir.y >= 0: return Vector2.INF
 	var t = -origin.y / dir.y
 	var intersection = origin + dir * t
-	var sn_x = round(intersection.x / tile_x) * tile_x
-	var sn_z = round(intersection.z / tile_z) * tile_z
-	return Vector2(sn_x, sn_z)
+	
+	# Determine the size of the asset currently being handled.
+	var asset_size = selected_model_tile_size
+	if is_instance_valid(selected_instance):
+		# Use a Vector2i as the default for get_meta.
+		asset_size = selected_instance.get_meta("tile_size", Vector2i(1, 1))
+
+	# Calculate the offset to center the asset on the grid cells.
+	# If size is odd (1, 3, 5), offset is 0.
+	# If size is even (2, 4, 6), offset is half a tile, so it centers between tiles.
+	var offset_x = (tile_x / 2.0) if asset_size.x % 2 == 0 else 0
+	var offset_z = (tile_z / 2.0) if asset_size.y % 2 == 0 else 0
+	
+	# Apply the offset before rounding to snap the center correctly.
+	var adjusted_x = intersection.x - offset_x
+	var adjusted_z = intersection.z - offset_z
+	
+	# Snap to the grid.
+	var sn_x = round(adjusted_x / tile_x) * tile_x
+	var sn_z = round(adjusted_z / tile_z) * tile_z
+	
+	# Return the final position, which is the center of the multi-tile area.
+	return Vector2(sn_x + offset_x, sn_z + offset_z)
+
+# --- Modified Helper Function ---
+# Finds the topmost instance at a given mouse position, accounting for multi-tile assets.
+# This is a robust, brute-force check that iterates through all placed assets.
+func _get_instance_at_mouse_pos(mouse_pos: Vector2) -> Node3D:
+	# 1. Get the 3D world position on the ground plane from the mouse position.
+	var origin = camera.project_ray_origin(mouse_pos)
+	var dir = camera.project_ray_normal(mouse_pos)
+	if dir.y >= 0: return null
+	var t = -origin.y / dir.y
+	var world_pos_3d = origin + dir * t
+	var world_pos_2d = Vector2(world_pos_3d.x, world_pos_3d.z)
+
+	var hits = []
+
+	# 2. Iterate through all grid positions that contain models. This is more robust
+	# than a spatial search and is acceptable for a mouse click event.
+	for instance_center_pos in grid_data:
+		var models_on_tile: Array = grid_data[instance_center_pos]
+		if models_on_tile.is_empty(): continue
+
+		# 3. We only need to check the top model at this position for selection.
+		var instance: Node3D = models_on_tile.back()
+		if not is_instance_valid(instance): continue
+
+		# 4. Calculate the world-space bounding box of the instance.
+		var instance_size: Vector2i = instance.get_meta("tile_size", Vector2i(1, 1))
+		
+		var half_width = (instance_size.x * tile_x) / 2.0
+		var half_depth = (instance_size.y * tile_z) / 2.0
+		
+		var bounds = Rect2(
+			instance_center_pos.x - half_width,
+			instance_center_pos.y - half_depth,
+			instance_size.x * tile_x,
+			instance_size.y * tile_z
+		)
+
+		# 5. Check if the mouse click's world position is inside this bounding box.
+		if bounds.has_point(world_pos_2d):
+			# 6. Add the instance to our list of hits.
+			hits.append(instance)
+
+	# 7. If there were no hits, return null.
+	if hits.is_empty():
+		return null
+	
+	# 8. If there was one hit, return it.
+	if hits.size() == 1:
+		return hits[0]
+
+	# 9. If there were multiple hits (e.g., overlapping assets), find the one with the highest Y position.
+	var topmost_instance = hits[0]
+	for i in range(1, hits.size()):
+		if hits[i].position.y > topmost_instance.position.y:
+			topmost_instance = hits[i]
+	
+	return topmost_instance
+# --- End Modified Helper Function ---
 
 # ==========================================
 # PLACEMENT, ROTATION & DELETION
@@ -732,15 +831,17 @@ func _unhandled_input(event):
 					last_painted_grid_pos = Vector2.INF
 					_place_model()
 				else:
-					_update_cursor(mouse_pos)
-					var grid_pos = Vector2(cursor.position.x, cursor.position.z)
-					if grid_data.has(grid_pos) and not grid_data[grid_pos].is_empty():
-						var model_to_select = grid_data[grid_pos].back()
-						_select_instance(model_to_select)
+					# --- Modified Section: Use the new selection logic ---
+					var instance_to_select = _get_instance_at_mouse_pos(mouse_pos)
+					
+					if is_instance_valid(instance_to_select):
+						_select_instance(instance_to_select)
 						is_dragging_instance = true
+						# The original_drag_grid_pos is the asset's center, which is correct.
 						original_drag_grid_pos = GridUtils.get_grid_pos(selected_instance.position, tile_x, tile_z)
 					else:
 						_deselect_instance()
+					# --- End Modified Section ---
 			else:
 				if is_dragging_instance and is_instance_valid(selected_instance):
 					_update_grid_data_for_moved_instance(selected_instance, original_drag_grid_pos)
@@ -757,9 +858,24 @@ func _update_cursor(mouse_pos: Vector2):
 	cursor.visible = true
 	cursor.position = Vector3(grid_pos.x, 0, grid_pos.y)
 	
+	# Update the cursor's visual size based on the asset being placed or selected.
+	var asset_size = selected_model_tile_size
+	if is_instance_valid(selected_instance):
+		# Use a Vector2i as the default for get_meta.
+		asset_size = selected_instance.get_meta("tile_size", Vector2i(1, 1))
+	
+	# Update the mesh size of the cursor to highlight the correct number of tiles.
+	if cursor.mesh is BoxMesh:
+		var new_size = Vector3(asset_size.x * tile_x, 0.1, asset_size.y * tile_z)
+		# Check if size changed to avoid unnecessary mesh updates.
+		if not cursor.mesh.size.is_equal_approx(new_size):
+			cursor.mesh.size = new_size
+	
 	if is_instance_valid(ghost_instance) or is_dragging_instance:
 		var y_offset = 0.0
 		
+		# Note: Stacking logic for multi-tile assets is complex.
+		# This implementation checks for stacks only at the center point.
 		if grid_data.has(grid_pos):
 			var models_on_tile: Array = grid_data[grid_pos]
 			var potential_stack_base = models_on_tile.duplicate()
@@ -792,19 +908,20 @@ func _drag_selected_instance():
 		return
 		
 	var mouse_pos = get_viewport().get_mouse_position()
-	var origin = camera.project_ray_origin(mouse_pos)
-	var dir = camera.project_ray_normal(mouse_pos)
-	if dir.y >= 0: return
-	var t = -origin.y / dir.y
-	var intersection = origin + dir * t
-
+	
+	# Use the new grid position logic for dragging as well.
 	if selected_instance.get_meta("uses_grid_snap", true):
-		var sn_x = round(intersection.x / tile_x) * tile_x
-		var sn_z = round(intersection.z / tile_z) * tile_z
-		if _is_within_terrain_bounds(Vector2(sn_x, sn_z)):
-			selected_instance.position.x = sn_x
-			selected_instance.position.z = sn_z
+		var grid_pos = _get_grid_pos_from_mouse(mouse_pos)
+		if _is_within_terrain_bounds(grid_pos):
+			selected_instance.position.x = grid_pos.x
+			selected_instance.position.z = grid_pos.y
 	else:
+		# Free-form dragging remains the same.
+		var origin = camera.project_ray_origin(mouse_pos)
+		var dir = camera.project_ray_normal(mouse_pos)
+		if dir.y >= 0: return
+		var t = -origin.y / dir.y
+		var intersection = origin + dir * t
 		if _is_within_terrain_bounds(Vector2(intersection.x, intersection.z)):
 			selected_instance.position.x = intersection.x
 			selected_instance.position.z = intersection.z
@@ -833,20 +950,50 @@ func _update_grid_data_for_moved_instance(instance: Node3D, old_grid_pos: Vector
 # ==========================================
 # PLACEMENT & SAVE/LOAD
 # ==========================================
+# --- Modified Function ---
+# Updated to correctly cycle through all assets under the cursor, not just those
+# sharing the same center point.
 func _cycle_selection_on_tile():
-	var grid_pos = Vector2(cursor.position.x, cursor.position.z)
-	var models_on_tile: Array = grid_data.get(grid_pos,[])
+	# Get the cursor's current center position in world space.
+	var cursor_world_pos = Vector2(cursor.position.x, cursor.position.z)
 	
-	if models_on_tile.is_empty():
+	var instances_under_cursor = []
+
+	# Brute-force check of all assets to see if their footprint contains the cursor's center.
+	for instance_center_pos in grid_data:
+		var models_on_tile: Array = grid_data[instance_center_pos]
+		for instance in models_on_tile:
+			if not is_instance_valid(instance): continue
+
+			var instance_size: Vector2i = instance.get_meta("tile_size", Vector2i(1, 1))
+			var half_width = (instance_size.x * tile_x) / 2.0
+			var half_depth = (instance_size.y * tile_z) / 2.0
+			
+			var bounds = Rect2(
+				instance_center_pos.x - half_width,
+				instance_center_pos.y - half_depth,
+				instance_size.x * tile_x,
+				instance_size.y * tile_z
+			)
+
+			if bounds.has_point(cursor_world_pos):
+				instances_under_cursor.append(instance)
+
+	if instances_under_cursor.is_empty():
 		_deselect_instance()
 		return
 		
-	var current_selection_index = -1
-	if is_instance_valid(selected_instance) and models_on_tile.has(selected_instance):
-		current_selection_index = models_on_tile.find(selected_instance)
+	# Sort the found instances by their Y position (bottom to top).
+	instances_under_cursor.sort_custom(func(a, b): return a.position.y < b.position.y)
 		
-	var next_index = (current_selection_index + 1) % models_on_tile.size()
-	_select_instance(models_on_tile[next_index])
+	var current_selection_index = -1
+	if is_instance_valid(selected_instance) and instances_under_cursor.has(selected_instance):
+		current_selection_index = instances_under_cursor.find(selected_instance)
+		
+	# Get the next index, wrapping around.
+	var next_index = (current_selection_index + 1) % instances_under_cursor.size()
+	_select_instance(instances_under_cursor[next_index])
+# --- End Modified Function ---
 
 func _place_model():
 	if not cursor.visible:
@@ -864,6 +1011,9 @@ func _place_model():
 		last_painted_grid_pos = grid_pos
 		return
 
+	# For multi-tile assets, we still use the center point as the key for grid_data.
+	# Stacking logic will need to be re-evaluated if multi-tile assets can stack.
+	# For now, we assume they are placed on the ground or on top of a stack at their center point.
 	if not grid_data.has(grid_pos):
 		grid_data[grid_pos] =[]
 	
@@ -881,12 +1031,15 @@ func _place_model():
 	var scene = load(selected_model_path)
 	if scene:
 		var instance = scene.instantiate()
+		# The instance is placed at the cursor's position, which is already centered.
 		instance.position = Vector3(cursor.position.x, y_offset, cursor.position.z)
 		instance.scale = Vector3.ONE * selected_model_scale
 		instance.rotation_degrees.y = placement_rotation_y
 		instance.set_meta("model_path", selected_model_path)
 		instance.set_meta("model_scale", selected_model_scale)
 		instance.set_meta("uses_grid_snap", true)
+		# Save the integer-based tile size to the instance's metadata.
+		instance.set_meta("tile_size", selected_model_tile_size)
 		GridUtils.configure_shadows(instance)
 		placed_models_container.add_child(instance)
 		models_on_tile.append(instance)
