@@ -2,9 +2,9 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cbfkkwudti782"
-path.s3tc="res://.godot/imported/colormap.png-d6d1abf9e5dc19613119fe5fdae1d7c6.s3tc.ctex"
-path.etc2="res://.godot/imported/colormap.png-d6d1abf9e5dc19613119fe5fdae1d7c6.etc2.ctex"
+uid="uid://b11whsbc1waur"
+path.s3tc="res://.godot/imported/colormap.png-783e5e2ee9180bb1151fcc9dc8a9f470.s3tc.ctex"
+path.etc2="res://.godot/imported/colormap.png-783e5e2ee9180bb1151fcc9dc8a9f470.etc2.ctex"
 metadata={
 "imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
@@ -12,8 +12,8 @@ metadata={
 
 [deps]
 
-source_file="res://models/blaster-kit/Textures/colormap.png"
-dest_files=["res://.godot/imported/colormap.png-d6d1abf9e5dc19613119fe5fdae1d7c6.s3tc.ctex", "res://.godot/imported/colormap.png-d6d1abf9e5dc19613119fe5fdae1d7c6.etc2.ctex"]
+source_file="res://models/city-commercial-misc/Textures/colormap.png"
+dest_files=["res://.godot/imported/colormap.png-783e5e2ee9180bb1151fcc9dc8a9f470.s3tc.ctex", "res://.godot/imported/colormap.png-783e5e2ee9180bb1151fcc9dc8a9f470.etc2.ctex"]
 
 [params]
 

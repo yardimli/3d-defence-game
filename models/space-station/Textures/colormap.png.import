@@ -4,15 +4,16 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://dxy15bebcc0id"
 path.s3tc="res://.godot/imported/colormap.png-2ede1f8ab1b96445ac3d38cb4072e035.s3tc.ctex"
+path.etc2="res://.godot/imported/colormap.png-2ede1f8ab1b96445ac3d38cb4072e035.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 
 [deps]
 
 source_file="res://models/space-station/Textures/colormap.png"
-dest_files=["res://.godot/imported/colormap.png-2ede1f8ab1b96445ac3d38cb4072e035.s3tc.ctex"]
+dest_files=["res://.godot/imported/colormap.png-2ede1f8ab1b96445ac3d38cb4072e035.s3tc.ctex", "res://.godot/imported/colormap.png-2ede1f8ab1b96445ac3d38cb4072e035.etc2.ctex"]
 
 [params]
 

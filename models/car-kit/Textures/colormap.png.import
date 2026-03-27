@@ -4,15 +4,16 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://bxv8h38srwrbu"
 path.s3tc="res://.godot/imported/colormap.png-7e03e36b4a6fab1c2a2af83db0e7a887.s3tc.ctex"
+path.etc2="res://.godot/imported/colormap.png-7e03e36b4a6fab1c2a2af83db0e7a887.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 
 [deps]
 
 source_file="res://models/car-kit/Textures/colormap.png"
-dest_files=["res://.godot/imported/colormap.png-7e03e36b4a6fab1c2a2af83db0e7a887.s3tc.ctex"]
+dest_files=["res://.godot/imported/colormap.png-7e03e36b4a6fab1c2a2af83db0e7a887.s3tc.ctex", "res://.godot/imported/colormap.png-7e03e36b4a6fab1c2a2af83db0e7a887.etc2.ctex"]
 
 [params]
 
