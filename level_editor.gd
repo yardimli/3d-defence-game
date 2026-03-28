@@ -61,6 +61,10 @@ var tree_density := 2.0 # percentage
 @onready var btn_spawn_car: Button = %ButtonSpawnCar 
 @onready var btn_demo_camera: Button = %ButtonDemoCamera
 @onready var btn_follow_car: Button = %ButtonFollowCar
+# --- NEW NODES ---
+# References for the new zoom meter UI elements.
+@onready var zoom_label: Label = %ZoomLabel
+@onready var zoom_label_timer: Timer = %ZoomLabelTimer
 
 # --- Materials ---
 var ghost_material: StandardMaterial3D
@@ -111,6 +115,8 @@ func _ready():
 	cursor.material_override = material	
 	
 	_update_status_label()
+	zoom_label.hide()
+	zoom_label_timer.timeout.connect(zoom_label.hide)
 
 # ==========================================
 # SETUP & LOADING
@@ -191,6 +197,15 @@ func _connect_ui_signals():
 
 	btn_demo_camera.toggled.connect(_on_demo_camera_toggled)
 	btn_follow_car.toggled.connect(_on_follow_car_toggled)
+	
+	# --- NEW CONNECTION ---
+	# Connect the camera's new 'zoomed' signal to our UI update function.
+	camera_pivot.zoomed.connect(_on_camera_zoomed)
+
+func _on_camera_zoomed(zoom_value: float):
+	zoom_label.text = "Zoom: %.1f" % zoom_value
+	zoom_label.show()
+	zoom_label_timer.start()
 
 func _on_model_selected(data: Dictionary):
 	if is_road_builder_enabled:

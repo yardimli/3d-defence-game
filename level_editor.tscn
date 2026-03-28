@@ -174,3 +174,19 @@ unique_name_in_owner = true
 
 [node name="SettingsDialog" parent="UI" unique_id=505505505 instance=ExtResource("5_abcde")]
 unique_name_in_owner = true
+
+[node name="ZoomMeterPanel" type="PanelContainer" parent="UI" unique_id=909090909]
+offset_right = 150.0
+offset_bottom = 40.0
+
+[node name="ZoomLabel" type="Label" parent="UI/ZoomMeterPanel" unique_id=919191919]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Zoom: 10.0"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="ZoomLabelTimer" type="Timer" parent="." unique_id=929292929]
+unique_name_in_owner = true
+wait_time = 1.5
+one_shot = true
