@@ -138,7 +138,6 @@ func _set_new_demo_target():
 			cam_zoom = randf_range(4.0, 50.0)
 			# Keep current rotation
 
-# --- MODIFIED SECTION ---
 # Input handling is refactored to cleanly separate gesture-based controls (Magic Mouse, Trackpad)
 # from traditional mouse button controls. This fixes the "always rotating" bug and correctly
 # implements the requested swipe gestures.
@@ -150,13 +149,15 @@ func handle_input(event: InputEvent) -> bool:
 	# --- Gesture Handling (for macOS Magic Mouse / Trackpad) ---
 	# This block handles swipe gestures for rotation, panning, and zooming.
 	if event is InputEventPanGesture:
-		if event.ctrl_pressed:
+		var is_shift_pressed = Input.is_key_pressed(KEY_SHIFT)
+		var is_control_pressed = Input.is_key_pressed(KEY_CTRL)
+		if is_control_pressed:
 			# ZOOM: Ctrl + Swipe Up/Down
 			cam_zoom += event.delta.y * 0.5
 			cam_zoom = clamp(cam_zoom, 2.0, 60.0)
 			emit_signal("zoomed", cam_zoom)
 			return true
-		elif event.shift_pressed:
+		elif is_shift_pressed:
 			# PAN: Shift + Swipe
 			if mode == Mode.FOLLOW: return true # Disable pan in follow mode
 			
@@ -170,6 +171,7 @@ func handle_input(event: InputEvent) -> bool:
 			global_position.y = max(global_position.y, 0.0)
 			return true
 		else:
+			print('orbit single-finger')
 			# ROTATE (ORBIT): Single-finger Swipe
 			# A pan gesture with no modifiers is treated as a rotation/orbit swipe.
 			cam_rot_y -= event.delta.x * 0.4
@@ -181,7 +183,7 @@ func handle_input(event: InputEvent) -> bool:
 	# This block handles drag and scroll wheel events.
 	if event is InputEventMouseMotion:
 		# PAN: Shift + MMB Drag or Spacebar + LMB Drag
-		var is_panning = (event.button_mask == MOUSE_BUTTON_MIDDLE and event.shift_pressed) or \
+		var is_panning = (event.button_mask == MOUSE_BUTTON_MIDDLE and Input.is_key_pressed(KEY_SHIFT)) or \
 						 (event.button_mask == MOUSE_BUTTON_LEFT and Input.is_key_pressed(KEY_SPACE))
 		
 		if is_panning:
@@ -196,10 +198,11 @@ func handle_input(event: InputEvent) -> bool:
 			return true
 			
 		# ROTATE (ORBIT): MMB Drag or RMB Drag
-		var is_rotating = (event.button_mask == MOUSE_BUTTON_MIDDLE and not event.shift_pressed) or \
+		var is_rotating = (event.button_mask == MOUSE_BUTTON_MIDDLE and not Input.is_key_pressed(KEY_SHIFT)) or \
 						  (event.button_mask == MOUSE_BUTTON_RIGHT)
-
+						
 		if is_rotating:
+			print('debug rotating')
 			cam_rot_y -= event.relative.x * 0.4
 			cam_rot_x -= event.relative.y * 0.4
 			cam_rot_x = clamp(cam_rot_x, -89.0, 5.0)

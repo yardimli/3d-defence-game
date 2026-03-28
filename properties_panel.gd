@@ -59,11 +59,9 @@ func update_fields(node: Node3D, models_on_tile: Array, grid_pos: Vector2):
 	pos_y_spinbox.value = node.position.y
 	pos_z_spinbox.value = node.position.z
 	
-	# --- Modified Section ---
 	# Update the tile size display, providing a Vector2i as the default.
 	var tile_size = node.get_meta("tile_size", Vector2i(1, 1))
 	tile_size_label.text = "%sx%s" % [tile_size.x, tile_size.y]
-	# --- End Modified Section ---
 	
 	# Update scale field (assumes uniform scaling)
 	scale_spinbox.value = node.scale.x

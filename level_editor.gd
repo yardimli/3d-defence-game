@@ -61,8 +61,6 @@ var tree_density := 2.0 # percentage
 @onready var btn_spawn_car: Button = %ButtonSpawnCar 
 @onready var btn_demo_camera: Button = %ButtonDemoCamera
 @onready var btn_follow_car: Button = %ButtonFollowCar
-# --- NEW NODES ---
-# References for the new zoom meter UI elements.
 @onready var zoom_label: Label = %ZoomLabel
 @onready var zoom_label_timer: Timer = %ZoomLabelTimer
 
@@ -70,7 +68,7 @@ var tree_density := 2.0 # percentage
 var ghost_material: StandardMaterial3D
 var selection_material: StandardMaterial3D
 
-# --- Custom Modules ---
+# ---` Custom Modules ---
 var road_builder
 var skybox
 var terrain_generator
@@ -198,8 +196,6 @@ func _connect_ui_signals():
 	btn_demo_camera.toggled.connect(_on_demo_camera_toggled)
 	btn_follow_car.toggled.connect(_on_follow_car_toggled)
 	
-	# --- NEW CONNECTION ---
-	# Connect the camera's new 'zoomed' signal to our UI update function.
 	camera_pivot.zoomed.connect(_on_camera_zoomed)
 
 func _on_camera_zoomed(zoom_value: float):
@@ -281,13 +277,10 @@ func _select_instance(instance: Node3D):
 	selected_instance = instance
 	_apply_selection_material(selected_instance)
 	
-	# --- MODIFIED LINE ---
-	# Use the new, robust function to get the correct grid key for the properties panel.
 	var grid_pos = _get_grid_key_for_instance(selected_instance)
 	var models_on_tile = grid_data.get(grid_pos,[])
 	properties_panel.update_fields(selected_instance, models_on_tile, grid_pos)
 	
-	# --- MODIFIED SECTION ---
 	# Update the cursor to match the size and position of the selected instance immediately.
 	# This prevents the cursor from jumping on the first drag motion.
 	_update_cursor(get_viewport().get_mouse_position())
@@ -297,7 +290,6 @@ func _deselect_instance():
 		_clear_material_overlay(selected_instance)
 		selected_instance = null
 		properties_panel.clear_and_hide()
-		# --- MODIFIED SECTION ---
 		# Update the cursor to reset its size and follow the mouse again.
 		_update_cursor(get_viewport().get_mouse_position())
 
@@ -312,7 +304,6 @@ func _is_within_terrain_bounds(pos: Vector2) -> bool:
 	
 	return pos.x >= min_x - 0.01 and pos.x <= max_x + 0.01 and pos.y >= min_z - 0.01 and pos.y <= max_z + 0.01
 
-# --- NEW HELPER FUNCTION ---
 # Calculates the correct grid data key for an instance, accounting for multi-tile offsets.
 # This is crucial for correctly finding and moving multi-tile assets in the grid_data dictionary.
 func _get_grid_key_for_instance(instance: Node3D) -> Vector2:
@@ -369,7 +360,6 @@ func _get_grid_pos_from_mouse(mouse_pos: Vector2) -> Vector2:
 	# Return the final position, which is the center of the multi-tile area.
 	return Vector2(sn_x + offset_x, sn_z + offset_z)
 
-# --- Modified Helper Function ---
 # Finds the topmost instance at a given mouse position, accounting for multi-tile assets.
 # This is a robust, brute-force check that iterates through all placed assets.
 func _get_instance_at_mouse_pos(mouse_pos: Vector2) -> Node3D:
@@ -426,7 +416,6 @@ func _get_instance_at_mouse_pos(mouse_pos: Vector2) -> Node3D:
 			topmost_instance = hits[i]
 	
 	return topmost_instance
-# --- End Modified Helper Function ---
 
 # ==========================================
 # PLACEMENT, ROTATION & DELETION
@@ -442,11 +431,16 @@ func _rotate_placement():
 	if is_instance_valid(ghost_instance):
 		ghost_instance.rotation_degrees.y = placement_rotation_y
 
+# This function now handles deleting assets, roads, and cars with a clear priority:
+# 1. An explicitly selected asset/road.
+# 2. A "selected" (followed) car.
+# 3. An asset/road under the cursor if nothing else is selected.
 func _delete_model_at_cursor():
 	var instance_to_delete = selected_instance
 	var grid_pos_to_update = Vector2.INF
 	var was_road = false
 
+	# Priority 1: An asset/road is explicitly selected. Delete it.
 	if is_instance_valid(instance_to_delete):
 		grid_pos_to_update = _get_grid_key_for_instance(instance_to_delete)
 		was_road = instance_to_delete.get_meta("is_road", false)
@@ -458,6 +452,15 @@ func _delete_model_at_cursor():
 				grid_data.erase(grid_pos_to_update)
 		instance_to_delete.queue_free()
 	else:
+		# Priority 2: If no asset is selected, check if a car is "selected" by being followed.
+		if is_following_car and is_instance_valid(camera_pivot.follow_target):
+			var car_to_delete = camera_pivot.follow_target
+			_stop_follow_mode() # Stop following the car.
+			track_cars.delete_car(car_to_delete) # Tell track_cars to remove it.
+			_update_status_label() # Update the UI.
+			return # Deletion is done, exit the function.
+
+		# Priority 3: Fallback to deleting the asset/road under the cursor.
 		var grid_pos = Vector2(cursor.position.x, cursor.position.z)
 		if grid_data.has(grid_pos):
 			var models_on_tile: Array = grid_data[grid_pos]
@@ -472,6 +475,7 @@ func _delete_model_at_cursor():
 			else:
 				grid_data.erase(grid_pos)
 	
+	# If an asset/road was deleted, update its neighbors.
 	if grid_pos_to_update != Vector2.INF:
 		if was_road:
 			road_builder.on_model_deleted(grid_pos_to_update)
@@ -678,14 +682,12 @@ func _update_status_label():
 func _on_properties_position_changed(new_pos: Vector3):
 	if not is_instance_valid(selected_instance): return
 	
-	# --- MODIFIED SECTION ---
 	# Temporarily update the instance's position to calculate its new grid key
 	# for the bounds check, then revert it.
 	var old_pos = selected_instance.position
 	selected_instance.position = new_pos
 	var new_grid_pos = _get_grid_key_for_instance(selected_instance)
 	selected_instance.position = old_pos
-	# --- END MODIFIED SECTION ---
 	
 	if not _is_within_terrain_bounds(new_grid_pos):
 		var old_grid_pos = _get_grid_key_for_instance(selected_instance)
@@ -704,7 +706,6 @@ func _on_properties_scale_changed(new_scale: float):
 	selected_instance.scale = Vector3.ONE * new_scale
 	selected_instance.set_meta("model_scale", new_scale)
 	
-	# --- MODIFIED LINE ---
 	var grid_pos = _get_grid_key_for_instance(selected_instance)
 	GridUtils.recalculate_stack_y_positions(grid_pos, grid_data)
 	_mark_as_modified()
@@ -712,7 +713,6 @@ func _on_properties_scale_changed(new_scale: float):
 func _on_properties_order_changed(direction: int):
 	if not is_instance_valid(selected_instance): return
 	
-	# --- MODIFIED LINE ---
 	var grid_pos = _get_grid_key_for_instance(selected_instance)
 	var models_on_tile: Array = grid_data.get(grid_pos,[])
 	
@@ -733,7 +733,6 @@ func _on_grid_snap_toggled(should_snap: bool):
 	selected_instance.set_meta("uses_grid_snap", should_snap)
 	
 	if should_snap:
-		# --- MODIFIED LINE ---
 		var grid_pos = _get_grid_key_for_instance(selected_instance)
 		selected_instance.position.x = grid_pos.x
 		selected_instance.position.z = grid_pos.y
@@ -895,9 +894,6 @@ func _unhandled_input(event):
 					if is_instance_valid(instance_to_select):
 						_select_instance(instance_to_select)
 						is_dragging_instance = true
-						# --- MODIFIED LINE ---
-						# Use the new function to get the correct original grid position.
-						# This is the key to fixing the cloning bug on save.
 						original_drag_grid_pos = _get_grid_key_for_instance(selected_instance)
 					else:
 						_deselect_instance()
@@ -912,9 +908,7 @@ func _update_cursor(mouse_pos: Vector2):
 	var grid_pos: Vector2
 	var asset_size: Vector2i
 
-	# --- MODIFIED SECTION ---
-	# This logic now handles two distinct modes: manipulating a selected asset
-	# or placing a new one.
+	# This logic now handles two distinct modes: manipulating a selected asset or placing a new one.
 	if is_instance_valid(selected_instance) and selected_model_path.is_empty():
 		# Mode 1: An asset is selected. The cursor should lock to its position and size.
 		# When dragging, the instance's position is updated, and this makes the cursor follow.
@@ -924,7 +918,6 @@ func _update_cursor(mouse_pos: Vector2):
 		# Mode 2: Placing a new asset or nothing is selected. The cursor follows the mouse.
 		grid_pos = _get_grid_pos_from_mouse(mouse_pos)
 		asset_size = selected_model_tile_size # Defaults to 1x1 if nothing is selected.
-	# --- END MODIFIED SECTION ---
 		
 	if grid_pos == Vector2.INF or not _is_within_terrain_bounds(grid_pos):
 		cursor.visible = false
@@ -1006,8 +999,6 @@ func _update_grid_data_for_moved_instance(instance: Node3D, old_grid_pos: Vector
 		else:
 			GridUtils.recalculate_stack_y_positions(old_grid_pos, grid_data)
 			
-	# --- MODIFIED LINE ---
-	# Use the new function to calculate the correct new grid position key.
 	var new_grid_pos = _get_grid_key_for_instance(instance)
 	if not grid_data.has(new_grid_pos):
 		grid_data[new_grid_pos] =[]
@@ -1021,7 +1012,6 @@ func _update_grid_data_for_moved_instance(instance: Node3D, old_grid_pos: Vector
 # ==========================================
 # PLACEMENT & SAVE/LOAD
 # ==========================================
-# --- Modified Function ---
 # Updated to correctly cycle through all assets under the cursor, not just those
 # sharing the same center point.
 func _cycle_selection_on_tile():
@@ -1064,7 +1054,6 @@ func _cycle_selection_on_tile():
 	# Get the next index, wrapping around.
 	var next_index = (current_selection_index + 1) % instances_under_cursor.size()
 	_select_instance(instances_under_cursor[next_index])
-# --- End Modified Function ---
 
 func _place_model():
 	if not cursor.visible:

@@ -181,6 +181,15 @@ func spawn_car(spawn_position: Vector3) -> bool:
 	_pick_next_segment(car_data)
 	return true # Return true to indicate success.
 
+# Deletes a specific car from the simulation.
+func delete_car(car_node: Node3D):
+	# Iterate backwards to safely remove items from the array.
+	for i in range(active_vehicles.size() - 1, -1, -1):
+		if active_vehicles[i].node == car_node:
+			active_vehicles.remove_at(i)
+			car_node.queue_free()
+			return # Exit once the car is found and removed.
+
 func _create_vehicle_instance() -> Dictionary:
 	if vehicle_models.is_empty():
 		return {}

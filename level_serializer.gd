@@ -8,8 +8,6 @@ static func save_scene(scene_name: String, grid_data: Dictionary, sun_light: Dir
 		var models_on_tile: Array = grid_data[grid_pos]
 		for node in models_on_tile:
 			if is_instance_valid(node):
-				# --- Modified Section ---
-				# Get tile_size meta, providing a Vector2i as the default.
 				var tile_size = node.get_meta("tile_size", Vector2i(1, 1))
 				level_data_array.append({
 					"path": node.get_meta("model_path"),
@@ -18,11 +16,9 @@ static func save_scene(scene_name: String, grid_data: Dictionary, sun_light: Dir
 					"scale": node.get_meta("model_scale", model_scale),
 					"uses_grid_snap": node.get_meta("uses_grid_snap", true),
 					"is_road": node.get_meta("is_road", false),
-					# Save the integer tile size components.
 					"tile_size_x": tile_size.x,
 					"tile_size_z": tile_size.y
 				})
-				# --- End Modified Section ---
 				
 	var sun_settings_data = {
 		"pos_x": sun_light.position.x, "pos_y": sun_light.position.y, "pos_z": sun_light.position.z,
@@ -71,15 +67,11 @@ static func load_scene(scene_name: String, grid_data: Dictionary, placed_models_
 				instance.set_meta("model_scale", loaded_scale)
 				instance.set_meta("uses_grid_snap", item.get("uses_grid_snap", true))
 				instance.set_meta("is_road", item.get("is_road", false))
-				# --- Modified Section ---
-				# Load tile size, explicitly casting to int to create a Vector2i.
 				var loaded_tile_size = Vector2i(int(item.get("tile_size_x", 1)), int(item.get("tile_size_z", 1)))
 				instance.set_meta("tile_size", loaded_tile_size)
-				# --- End Modified Section ---
 				GridUtils.configure_shadows(instance)
 				placed_models_container.add_child(instance)
 				
-				# --- Modified Line ---
 				# Pass loaded_tile_size to get_grid_pos to correctly calculate the grid key for multi-tile assets.
 				var grid_pos = GridUtils.get_grid_pos(instance.position, tile_x, tile_z, loaded_tile_size)
 				if not grid_data.has(grid_pos):

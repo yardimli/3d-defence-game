@@ -120,7 +120,6 @@ func _on_folder_selected(index: int):
 	else:
 		folder_config = null # Reset if no config is found.
 		
-	# --- Modified Section ---
 	# Load tile size settings, ensuring they are cast to integers.
 	var size_x = 1
 	var size_z = 1
@@ -135,7 +134,6 @@ func _on_folder_selected(index: int):
 		size_z = int(root_config.get_value("Settings", "tile_size_z"))
 	
 	current_folder_tile_size = Vector2i(size_x, size_z)
-	# --- End Modified Section ---
 		
 	_populate_model_previews(current_folder_path)
 
