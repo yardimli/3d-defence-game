@@ -266,10 +266,15 @@ func _select_instance(instance: Node3D):
 	selected_instance = instance
 	_apply_selection_material(selected_instance)
 	
-	var grid_pos = GridUtils.get_grid_pos(selected_instance.position, tile_x, tile_z)
+	# --- MODIFIED LINE ---
+	# Use the new, robust function to get the correct grid key for the properties panel.
+	var grid_pos = _get_grid_key_for_instance(selected_instance)
 	var models_on_tile = grid_data.get(grid_pos,[])
 	properties_panel.update_fields(selected_instance, models_on_tile, grid_pos)
-	# Update the cursor to match the size of the selected instance.
+	
+	# --- MODIFIED SECTION ---
+	# Update the cursor to match the size and position of the selected instance immediately.
+	# This prevents the cursor from jumping on the first drag motion.
 	_update_cursor(get_viewport().get_mouse_position())
 
 func _deselect_instance():
@@ -277,7 +282,8 @@ func _deselect_instance():
 		_clear_material_overlay(selected_instance)
 		selected_instance = null
 		properties_panel.clear_and_hide()
-		# Update the cursor to reset its size back to 1x1.
+		# --- MODIFIED SECTION ---
+		# Update the cursor to reset its size and follow the mouse again.
 		_update_cursor(get_viewport().get_mouse_position())
 
 # ==========================================
@@ -290,6 +296,33 @@ func _is_within_terrain_bounds(pos: Vector2) -> bool:
 	var max_z = (terrain_depth / 2.0 - 1) * tile_z
 	
 	return pos.x >= min_x - 0.01 and pos.x <= max_x + 0.01 and pos.y >= min_z - 0.01 and pos.y <= max_z + 0.01
+
+# --- NEW HELPER FUNCTION ---
+# Calculates the correct grid data key for an instance, accounting for multi-tile offsets.
+# This is crucial for correctly finding and moving multi-tile assets in the grid_data dictionary.
+func _get_grid_key_for_instance(instance: Node3D) -> Vector2:
+	if not is_instance_valid(instance):
+		return Vector2.INF
+
+	# The asset's tile size is needed to determine the correct grid snapping logic.
+	var asset_size: Vector2i = instance.get_meta("tile_size", Vector2i(1, 1))
+
+	# Calculate the offset used for centering.
+	# If size is odd (1, 3), offset is 0. Asset is centered on a tile.
+	# If size is even (2, 4), offset is half a tile. Asset is centered between tiles.
+	var offset_x = (tile_x / 2.0) if asset_size.x % 2 == 0 else 0
+	var offset_z = (tile_z / 2.0) if asset_size.y % 2 == 0 else 0
+
+	# To snap the instance's current position to its correct grid center,
+	# we apply the same logic as when placing it with the mouse.
+	var adjusted_x = instance.position.x - offset_x
+	var adjusted_z = instance.position.z - offset_z
+
+	var sn_x = round(adjusted_x / tile_x) * tile_x
+	var sn_z = round(adjusted_z / tile_z) * tile_z
+
+	# The final key is the snapped position plus the offset.
+	return Vector2(sn_x + offset_x, sn_z + offset_z)
 
 func _get_grid_pos_from_mouse(mouse_pos: Vector2) -> Vector2:
 	var origin = camera.project_ray_origin(mouse_pos)
@@ -400,7 +433,7 @@ func _delete_model_at_cursor():
 	var was_road = false
 
 	if is_instance_valid(instance_to_delete):
-		grid_pos_to_update = GridUtils.get_grid_pos(instance_to_delete.position, tile_x, tile_z)
+		grid_pos_to_update = _get_grid_key_for_instance(instance_to_delete)
 		was_road = instance_to_delete.get_meta("is_road", false)
 		_deselect_instance()
 		if grid_data.has(grid_pos_to_update):
@@ -630,13 +663,21 @@ func _update_status_label():
 func _on_properties_position_changed(new_pos: Vector3):
 	if not is_instance_valid(selected_instance): return
 	
-	var new_grid_pos = GridUtils.get_grid_pos(new_pos, tile_x, tile_z)
+	# --- MODIFIED SECTION ---
+	# Temporarily update the instance's position to calculate its new grid key
+	# for the bounds check, then revert it.
+	var old_pos = selected_instance.position
+	selected_instance.position = new_pos
+	var new_grid_pos = _get_grid_key_for_instance(selected_instance)
+	selected_instance.position = old_pos
+	# --- END MODIFIED SECTION ---
+	
 	if not _is_within_terrain_bounds(new_grid_pos):
-		var old_grid_pos = GridUtils.get_grid_pos(selected_instance.position, tile_x, tile_z)
+		var old_grid_pos = _get_grid_key_for_instance(selected_instance)
 		properties_panel.update_fields(selected_instance, grid_data.get(old_grid_pos,[]), old_grid_pos)
 		return
 	
-	var old_grid_pos = GridUtils.get_grid_pos(selected_instance.position, tile_x, tile_z)
+	var old_grid_pos = _get_grid_key_for_instance(selected_instance)
 	selected_instance.position = new_pos
 	selected_instance.set_meta("uses_grid_snap", false)
 	_update_grid_data_for_moved_instance(selected_instance, old_grid_pos)
@@ -648,14 +689,16 @@ func _on_properties_scale_changed(new_scale: float):
 	selected_instance.scale = Vector3.ONE * new_scale
 	selected_instance.set_meta("model_scale", new_scale)
 	
-	var grid_pos = GridUtils.get_grid_pos(selected_instance.position, tile_x, tile_z)
+	# --- MODIFIED LINE ---
+	var grid_pos = _get_grid_key_for_instance(selected_instance)
 	GridUtils.recalculate_stack_y_positions(grid_pos, grid_data)
 	_mark_as_modified()
 
 func _on_properties_order_changed(direction: int):
 	if not is_instance_valid(selected_instance): return
 	
-	var grid_pos = GridUtils.get_grid_pos(selected_instance.position, tile_x, tile_z)
+	# --- MODIFIED LINE ---
+	var grid_pos = _get_grid_key_for_instance(selected_instance)
 	var models_on_tile: Array = grid_data.get(grid_pos,[])
 	
 	if models_on_tile.size() > 1:
@@ -675,7 +718,8 @@ func _on_grid_snap_toggled(should_snap: bool):
 	selected_instance.set_meta("uses_grid_snap", should_snap)
 	
 	if should_snap:
-		var grid_pos = GridUtils.get_grid_pos(selected_instance.position, tile_x, tile_z)
+		# --- MODIFIED LINE ---
+		var grid_pos = _get_grid_key_for_instance(selected_instance)
 		selected_instance.position.x = grid_pos.x
 		selected_instance.position.z = grid_pos.y
 		
@@ -831,17 +875,17 @@ func _unhandled_input(event):
 					last_painted_grid_pos = Vector2.INF
 					_place_model()
 				else:
-					# --- Modified Section: Use the new selection logic ---
 					var instance_to_select = _get_instance_at_mouse_pos(mouse_pos)
 					
 					if is_instance_valid(instance_to_select):
 						_select_instance(instance_to_select)
 						is_dragging_instance = true
-						# The original_drag_grid_pos is the asset's center, which is correct.
-						original_drag_grid_pos = GridUtils.get_grid_pos(selected_instance.position, tile_x, tile_z)
+						# --- MODIFIED LINE ---
+						# Use the new function to get the correct original grid position.
+						# This is the key to fixing the cloning bug on save.
+						original_drag_grid_pos = _get_grid_key_for_instance(selected_instance)
 					else:
 						_deselect_instance()
-					# --- End Modified Section ---
 			else:
 				if is_dragging_instance and is_instance_valid(selected_instance):
 					_update_grid_data_for_moved_instance(selected_instance, original_drag_grid_pos)
@@ -850,7 +894,23 @@ func _unhandled_input(event):
 				is_dragging_instance = false
 
 func _update_cursor(mouse_pos: Vector2):
-	var grid_pos = _get_grid_pos_from_mouse(mouse_pos)
+	var grid_pos: Vector2
+	var asset_size: Vector2i
+
+	# --- MODIFIED SECTION ---
+	# This logic now handles two distinct modes: manipulating a selected asset
+	# or placing a new one.
+	if is_instance_valid(selected_instance) and selected_model_path.is_empty():
+		# Mode 1: An asset is selected. The cursor should lock to its position and size.
+		# When dragging, the instance's position is updated, and this makes the cursor follow.
+		grid_pos = _get_grid_key_for_instance(selected_instance)
+		asset_size = selected_instance.get_meta("tile_size", Vector2i(1, 1))
+	else:
+		# Mode 2: Placing a new asset or nothing is selected. The cursor follows the mouse.
+		grid_pos = _get_grid_pos_from_mouse(mouse_pos)
+		asset_size = selected_model_tile_size # Defaults to 1x1 if nothing is selected.
+	# --- END MODIFIED SECTION ---
+		
 	if grid_pos == Vector2.INF or not _is_within_terrain_bounds(grid_pos):
 		cursor.visible = false
 		return
@@ -859,12 +919,6 @@ func _update_cursor(mouse_pos: Vector2):
 	cursor.position = Vector3(grid_pos.x, 0, grid_pos.y)
 	
 	# Update the cursor's visual size based on the asset being placed or selected.
-	var asset_size = selected_model_tile_size
-	if is_instance_valid(selected_instance):
-		# Use a Vector2i as the default for get_meta.
-		asset_size = selected_instance.get_meta("tile_size", Vector2i(1, 1))
-	
-	# Update the mesh size of the cursor to highlight the correct number of tiles.
 	if cursor.mesh is BoxMesh:
 		var new_size = Vector3(asset_size.x * tile_x, 0.1, asset_size.y * tile_z)
 		# Check if size changed to avoid unnecessary mesh updates.
@@ -937,7 +991,9 @@ func _update_grid_data_for_moved_instance(instance: Node3D, old_grid_pos: Vector
 		else:
 			GridUtils.recalculate_stack_y_positions(old_grid_pos, grid_data)
 			
-	var new_grid_pos = GridUtils.get_grid_pos(instance.position, tile_x, tile_z)
+	# --- MODIFIED LINE ---
+	# Use the new function to calculate the correct new grid position key.
+	var new_grid_pos = _get_grid_key_for_instance(instance)
 	if not grid_data.has(new_grid_pos):
 		grid_data[new_grid_pos] =[]
 	var new_tile_models: Array = grid_data[new_grid_pos]

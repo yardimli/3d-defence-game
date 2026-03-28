@@ -79,9 +79,11 @@ static func load_scene(scene_name: String, grid_data: Dictionary, placed_models_
 				GridUtils.configure_shadows(instance)
 				placed_models_container.add_child(instance)
 				
-				var grid_pos = GridUtils.get_grid_pos(instance.position, tile_x, tile_z)
+				# --- Modified Line ---
+				# Pass loaded_tile_size to get_grid_pos to correctly calculate the grid key for multi-tile assets.
+				var grid_pos = GridUtils.get_grid_pos(instance.position, tile_x, tile_z, loaded_tile_size)
 				if not grid_data.has(grid_pos):
-					grid_data[grid_pos] = []
+					grid_data[grid_pos] =[]
 				grid_data[grid_pos].append(instance)
 	else:
 		printerr("Failed to load scene: Invalid save file format.")

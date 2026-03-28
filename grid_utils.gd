@@ -2,10 +2,20 @@ class_name GridUtils
 extends RefCounted
 
 # Extracted grid position calculation
-static func get_grid_pos(position: Vector3, tile_x: float, tile_z: float) -> Vector2:
-	var x = round(position.x / tile_x) * tile_x
-	var z = round(position.z / tile_z) * tile_z
-	return Vector2(x, z)
+# --- Modified Section ---
+# Added asset_size parameter to correctly calculate grid position for multi-tile assets.
+static func get_grid_pos(position: Vector3, tile_x: float, tile_z: float, asset_size: Vector2i = Vector2i(1, 1)) -> Vector2:
+	var offset_x = (tile_x / 2.0) if asset_size.x % 2 == 0 else 0.0
+	var offset_z = (tile_z / 2.0) if asset_size.y % 2 == 0 else 0.0
+	
+	var adjusted_x = position.x - offset_x
+	var adjusted_z = position.z - offset_z
+	
+	var x = round(adjusted_x / tile_x) * tile_x
+	var z = round(adjusted_z / tile_z) * tile_z
+	
+	return Vector2(x + offset_x, z + offset_z)
+# --- End Modified Section ---
 
 # Extracted shadow configuration
 static func configure_shadows(node: Node):

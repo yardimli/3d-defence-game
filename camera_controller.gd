@@ -3,6 +3,10 @@ extends Node3D
 # Enum to manage camera behavior modes
 enum Mode { MANUAL, DEMO, FOLLOW }
 
+# --- Signals ---
+# Emitted when the camera zoom level changes.
+signal zoomed(zoom_value: float)
+
 # --- State ---
 var cam_zoom := 10.0
 var cam_rot_x := -45.0
@@ -134,17 +138,28 @@ func _set_new_demo_target():
 			cam_zoom = randf_range(4.0, 50.0)
 			# Keep current rotation
 
-# Extracted input handling for camera
+# --- MODIFIED SECTION ---
+# Extracted input handling for camera, updated for standard controls.
 func handle_input(event: InputEvent) -> bool:
-	# Disable panning input when in an automated mode
+	# Disable all camera input when in an automated mode
 	if mode == Mode.DEMO:
-		return false # Ignore all camera input in demo mode
+		return false
 
 	if event is InputEventMouseMotion:
-		# Disable panning when following a car, but allow rotation
-		if Input.is_mouse_button_pressed(MOUSE_BUTTON_MIDDLE) or (Input.is_key_pressed(KEY_SHIFT) and Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)):
+		# --- Panning Logic ---
+		# Windows: Shift + MMB Drag
+		# macOS: Shift + Swipe (registers as MouseMotion with shift_pressed)
+		# macOS Alt: Spacebar + LMB Drag
+		var is_panning = (event.button_mask == MOUSE_BUTTON_MIDDLE and event.shift_pressed) or \
+						 (event.shift_pressed and event.button_mask == 0) or \
+						 (event.button_mask == MOUSE_BUTTON_LEFT and Input.is_key_pressed(KEY_SPACE))
+		
+		if is_panning:
+			# Disable panning when following a car, but allow rotation/zoom.
 			if mode == Mode.FOLLOW:
 				return true # Consume input but do nothing
+
+			# Standard panning implementation
 			var right = camera.global_transform.basis.x
 			var forward = camera.global_transform.basis.z
 			forward.y = 0
@@ -154,25 +169,44 @@ func handle_input(event: InputEvent) -> bool:
 			# Clamp the pivot's Y position to prevent it from being panned below the ground plane.
 			global_position.y = max(global_position.y, 0.0)
 			return true
-		elif Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
+			
+		# --- Rotation (Orbit) Logic ---
+		# Windows: MMB Drag OR RMB Drag
+		# macOS: Option (Alt) + Swipe
+		var is_rotating = (event.button_mask == MOUSE_BUTTON_MIDDLE and not event.shift_pressed) or \
+						  (event.button_mask == MOUSE_BUTTON_RIGHT) or \
+						  (event.alt_pressed)
+
+		if is_rotating:
 			# Rotation works in both MANUAL and FOLLOW modes
 			cam_rot_y -= event.relative.x * 0.4
 			cam_rot_x -= event.relative.y * 0.4
+			# Clamp vertical rotation to prevent flipping over
 			cam_rot_x = clamp(cam_rot_x, -89.0, 5.0)
 			return true
-	elif event is InputEventPanGesture:
-		# Zoom works in both MANUAL and FOLLOW modes
-		cam_zoom += event.delta.y * 0.5
-		cam_zoom = clamp(cam_zoom, 2.0, 60.0)
-		return true
+			
+	# --- Zoom Logic (Mouse Wheel) ---
 	elif event is InputEventMouseButton:
-		# Zoom works in both MANUAL and FOLLOW modes
-		if event.button_index == MOUSE_BUTTON_WHEEL_UP: 
+		# This works for both Windows and macOS with a standard mouse.
+		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
 			cam_zoom -= 1.5
 			cam_zoom = clamp(cam_zoom, 2.0, 60.0)
+			emit_signal("zoomed", cam_zoom) # Emit signal for UI
 			return true
-		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN: 
+		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 			cam_zoom += 1.5
 			cam_zoom = clamp(cam_zoom, 2.0, 60.0)
+			emit_signal("zoomed", cam_zoom) # Emit signal for UI
 			return true
+			
+	# --- Zoom Logic (macOS Magic Mouse / Trackpad) ---
+	elif event is InputEventPanGesture:
+		# macOS: Ctrl + Swipe Up/Down on Magic Mouse
+		if event.ctrl_pressed:
+			cam_zoom += event.delta.y * 0.5 # Use the vertical delta of the pan gesture
+			cam_zoom = clamp(cam_zoom, 2.0, 60.0)
+			emit_signal("zoomed", cam_zoom) # Emit signal for UI
+			return true
+
 	return false
+# --- END MODIFIED SECTION ---
