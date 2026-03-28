@@ -1,3 +1,62 @@
+GAME DESIGN DOCUMENT HUMAN DRAFT:
+
+game is playing the usual litRPG books
+
+the game starts with a busy city. there are cars driving on the roads. suddenly a countdown appears, then all the 
+cars slide to a stop.
+a dialog happens between the game heros. they all see the status screen that most LitRPG books talk about.
+they talk about what is happening introducing the game to the player about how the game works.
+the player can control what these 10 heros will start learning.
+there are 3 learning paths
+magic
+ranged (DPS)
+tank
+
+the magic learner will learn to create shields to protect buildings and cars, mana battery to make the cars run again and healing 
+skills to repair buildings and cars
+the dps learns new spells to use
+the tank makes the cars stronger and keep them pulling monsters
+
+the city originally has 1000 residents. when monsters attack buildings the residents start dying. the sooner the buildings can 
+be shielded. it is normal for the population to decreese in the beginning of the game. the player needs to focus on a small area 
+to protect and advance, when buildings are attacked the residents will die. when buildings are later repaired they will be again 
+populated by survivors.
+
+during the intro the player can see monsters are attacking and in the end 70% of the buildings will be destroyed leaving 
+300 residents and 3 heros. as the city repopulates the number of heros can increase to 10 heros and 1000 people.
+
+on average each of the heros the player can control for learning will be equally represented in the
+population with max 100 people per hero. 10 residents can control 1 car.
+the cars are driven by the dps and tank residents.
+the magic residents dont drive but stay in the buildings.
+
+in the game each player is represented by 100 residents, when residents die the chance of the hero dying also increases and the number of cars that run on the streets for that hero decreases. 
+
+the hero's will need to choose one learning path and have to stay on it.
+
+in the ui we dont see people, people are abstractly represented by cars that have mana batteries driving around either tanking
+monsters or attacking them with ranged attacks.
+also the houses represent the people 
+if a house has shields installed they will be visible when attacked. 
+the player can use the mage heros to repair/reinforce existing buildings.
+the mage heros will have Magic Points that will drain when used to add mana batteries, shields or do repairs and refil over time
+based on the level of the hero
+the dps and tank heros has health instead that will drop when the cars are attacked by monsters, the cars will have health bars
+if it reaches zero both the population will decrease and the car will stop moving until it is repaired mana battery is replaced.
+
+as the population increases the mage can restore more cars to bring into the fight.
+
+the buildings and the cars wont be fully destoryed but instead will be unlivable undrivable till the mage hero fixes them.
+
+user can have many heros with the same profession
+
+the game will show the heros as portraits and will use a card game based logic to manage their skills. the cards can be stacked
+to improve/combine skills there will be a simple ui when user clicks on a hero to control their learning path and skills.
+
+
+organize this game design document. add examples and improve on it based on popular litRPG books, add sections that will be later filled in with images. for now but placeholders for images with [[ description of whats on the image ]] one a single line between the paragraphs. include multiple image descriptions for each section.
+
+======================================================================================================
 TODO:
 
 simcity clone, when a space has roads on all sides show buttons R,C,I residential, commerical, industrial for zoneing
