@@ -1,0 +1,154 @@
+## Game Design Document: System Apocalypse - Idle Defender
+
+### 1. Game Overview
+
+**1.1. Game Concept**
+*System Apocalypse - Idle Defender* is a single-player, text-based incremental game that merges LitRPG progression with idle hero management. Set in a modern city at the moment of a world-changing "System Awakening," players manage a growing team of up to 10 heroes. The core of the game is assigning these heroes to various tasks represented by progress bars. Time moves forward constantly, and the player's goal is to strategically allocate their heroes' efforts to survive, rebuild the city, and grow stronger. The city's population is abstractly tied to the number of restored buildings, creating a clear and compelling progression path.
+
+**1.2. Genre**
+LitRPG, Idle, Incremental, Management
+
+**1.3. Target Audience**
+Fans of idle and incremental games like *Progress Knight*, LitRPG and GameLit enthusiasts, and players who enjoy passive progression and management sims.
+
+**1.4. Unique Selling Points**
+*   **LitRPG Idle Progression:** Experience the classic LitRPG power fantasy—leveling up, gaining skills, and seeing stats increase—within a satisfying, hands-off idle framework.
+*   **Strategic Hero Allocation:** The core gameplay is easy to learn but offers strategic depth. Players must decide how to best utilize their heroes' time: fighting, repairing, training, or scavenging.
+*   **Constant Progress:** Whether the game is open or closed, time and hero tasks continue, ensuring the player always returns to meaningful progress.
+*   **Minimalist UI, Deep Systems:** A clean, text-and-bar-based interface makes the game accessible and lightweight, while the underlying hero classes, skill cards, and inventory systems provide long-term depth.
+
+***
+
+### 2. Core Gameplay Loop
+
+The gameplay is a continuous cycle of **Allocation -> Progression -> Events -> Re-allocation**. Time is a constant, always ticking forward (e.g., Year 1, Day 1, 00:01).
+
+**2.1. The Awakening (Introduction)**
+The game begins with a single block of text setting the scene: the sky flashing, the world changing, and the "System" integrating.
+
+> **[SYSTEM ANNOUNCEMENT: The Tutorial Phase has concluded. Commencing Integration.]**
+> **[Welcome, User, to the System. Your world has now been integrated. Survive. Evolve. Prevail.]**
+>
+> The city is in chaos. 90% of the buildings are in ruins. The population is scattered and broken.
+> You have found three survivors who have Awakened unique abilities. They look to you for guidance.
+
+The player starts with three Level 1 heroes (one of each class) and a devastated city.
+
+**2.2. The Idle Cycle**
+
+*   **Allocation:** The primary player interaction is through the "Heroes" tab. Here, the player assigns a single task to Aegis hero by clicking on buttons. repair, heal, shield buildings, add mana to cars.
+
+*   **Progression:** As time passes, the progress bars for assigned tasks fill up. When a bar is full, it triggers a reward and resets.
+    *   **XP Gain:** Most tasks grant XP. When a hero's XP bar fills, they level up, their stats increase, and they may receive a new Skill Card.
+    *   **Resource Gain:** Tasks like "Scavenge Ruins" yield items for the Inventory.
+    *   **City Repair:** The "Urban Mending" task repairs buildings, increasing the population cap.
+
+*   **Events:** The world is not static. Random events will appear in the game log, forcing the player to adapt.
+    *   *Example Log Entry:* `[Day 3, 14:22] A horde of Crawlers swarmed the Downtown sector. All standing buildings lose 50 HP.`
+    *   *Example Log Entry:* `[Day 4, 08:00] Your Vanguard on patrol was ambushed by a Goliath! Hero takes 75 damage.`
+    These events create a constant pressure, requiring players to balance offensive tasks with defensive ones like repairing and healing.
+
+*   **Re-allocation:** Based on events and goals, the player will periodically adjust hero tasks. If building health is low, more heroes might be assigned to repair. If a tough monster event is coming, heroes might be switched to training to level up first.
+
+***
+
+### 3. User Interface (Text & HTML Based)
+
+The UI is clean, simple, and functional, designed to present information clearly without complex graphics. It is organized into several key tabs.
+
+[[A mockup of a simple, dark-themed webpage. A static header shows global stats. Below are clickable tabs for "City", "Heroes", and "Inventory". The main content area changes based on the selected tab. A scrolling log window is at the bottom.]]
+
+**3.1. Main Layout**
+*   **Header:** Always visible. Displays:
+    *   `In-Game Time: Year 1, Day X, HH:MM:SS`
+    *   `Population: 30 / 1000`
+    *   `Buildings: 3 / 100 (97 Ruined)`
+    *   `Threat Level: Low`
+*   **Tabs:** The main navigation between screens.
+*   **Game Log:** A scrolling window at the bottom that shows all events, level-ups, and rewards.
+
+**3.2. City Tab**
+This tab shows the status of the city itself.
+*   **Building Status:**
+    *   `Total Buildings: 100`
+    *   `Functional Buildings: 3`
+    *   `Damaged Buildings: 12 (Average HP: 45%)`
+    *   `Ruined Buildings: 85`
+*   **Repair Progress:**
+    *   `Current Target: Damaged Building #14 (210/500 HP)`
+    *   A progress bar showing the current repair task.
+*   **Action Button:**
+    *   `[ Restore 100 HP to a Building ]` - This button becomes clickable if the player has specific resources from scavenging, providing an active way to contribute.
+
+**3.3. Heroes Tab**
+The central management screen. It lists all active heroes.
+*   **Hero Entry (Repeated for each hero):**
+    *   **Name:** `Hero Name` | **Class:** `Aegis` | **Level:** `1`
+    *   **XP:** `[||||......] 200/1000` (Progress Bar)
+    *   **HP:** `[||||||||||] 150/150` (Green Progress Bar, regenerates slowly)
+    *   **MP:** `[||||||||||] 200/200` (Blue Progress Bar, regenerates based on stats)
+    *   **Current Task:** `[ Dropdown Menu: Urban Mending ]`
+    *   **Task Progress:** `Repairing Building: [|||||.....] 55/100` (Progress Bar)
+    *   **Status Screen Button:** `[ View Status & Skills ]` - Clicking this opens a detailed view of the hero's stats (STR, INT, etc.) and their equipped Skill Cards.
+
+**3.4. Inventory Tab**
+A simple list of collected resources.
+*   **Skill Cards:**
+    *   `Mana Bolt [Lv. 1] (Unassigned)`
+    *   `Aegis Shield [Lv. 2] (In Deck)`
+*   **Resources:**
+    *   `Salvaged Parts: 45`
+    *   `Medical Supplies: 12`
+
+***
+
+### 4. The Heroes
+
+**4.1. Hero Learning Paths (Classes)**
+The three classes (Aegis, Striker, Vanguard) from the original concept are the foundation. The player's choice of which hero class to assign to which task is the core strategy.
+*   **Aegis:** The only class that can perform the `Urban Mending` and `Aegis Shielding` (reduces incoming building damage) tasks.
+*   **Striker:** Most efficient at `Patrol Streets` and `Hunt Monsters` tasks, generating the most XP and having a higher chance to find loot.
+*   **Vanguard:** Can perform the `Taunt Monsters` task, which directs a portion of random damage from buildings to themselves. Also very effective at `Patrol Streets`.
+
+**4.2. Hero Progression and Skills**
+*   **Gaining XP:** Heroes gain XP automatically from their assigned task. A Striker patrolling gains combat XP, while an Aegis repairing gains mending XP. Every action contributes to leveling up.
+*   **The Card System:**
+    *   **Acquiring Cards:** When a hero levels up, they are presented with two or three new Skill Card options to choose from. Rare cards can also be found as rewards for completing difficult tasks or from special events in the log.
+    *   **Stacking Cards:** If a hero acquires a card they already have, it automatically stacks, increasing the card's level and power (e.g., reduces MP cost, increases damage, or shortens the time its associated progress bar takes to fill).
+    *   **Managing Skills:** In the hero's "Status Screen," the player can see the full deck of cards that passively and actively influence that hero's performance.
+
+***
+
+### 5. The City and Enemies
+
+**5.1. Population and Buildings**
+*   **Population:** Each fully repaired building adds +10 to the maximum population. The current population slowly increases over time to fill this cap.
+*   **Heroes and Population:** A new hero can be recruited for every 100 population reached, up to the maximum of 10 heroes.
+
+**5.2. Abstracted Enemies**
+Monsters are not units on a map but a constant pressure represented by log events.
+*   **Ambient Damage:** A slow, constant drain on the HP of all buildings, representing the general presence of monsters.
+*   **Spike Events:** Randomly occurring events announced in the log that deal significant damage to buildings or heroes, such as "A Breacher tore through the shields on the East Side!"
+*   **Threat Level:** The global "Threat Level" increases as the player's population and number of buildings grow. A higher threat level means more frequent and more dangerous negative events. Assigning heroes to "Patrol" and "Hunt" tasks can temporarily lower the threat level.
+
+
+
+
+in the game only Aegis will have buttons. the buttons are add mana battery to cars, keep track of cars with mana batteries as they will do the fighting
+striker and vanguard control repaired cars, shared equally. they are driving around and fighting monsters 
+add active monsters counter. 
+when the heros are fighting monsters show the monster inside the heros card, which monsters they are fighting, create a new json file to keep track of monsters. monsters will get stronger over time as well. show the monsters hp in the card till either it dies or the hero dies. if the hero dies the monster will attack the building.s
+
+striker inventory for crafting should be limited to DPS skills and vanguard is tank, Aegis skills is create mana battery (better strength, increases hp of cars), better shields for buildings, and better healing.
+from the ui aegis will have buttons for add mana battery to car, will increase the number of cars on the street, 
+add shields to buildings, buildings with shields will be immune to monster attacks show it in the header shielded and non shielded buildings, also display broken buildings that will drop when they are repaired.
+orgainize the javascript into multiple files with one orchestrator. there should be one javascript for each hero type
+
+Aegis XP should increase each time they cast a spell, and as level increse will have more mana, and mana restore speed should increase
+on the buttons add checboxs besides them for auto cast when needed. game time should increase in year month days only one day is equal to 10 seconds
+health related items should appear in aegis inventory.  increase recipes for all classes also add recipes that combine existing skills with items to produce better skills. in the skills replace lower versions of skills with upgraded versions. the heros should always use the best version they have. instead of having details and inventory in a popup show it under each hero  in a new card for each hero.
+
+make the progressbars change smoothly instead of the way it is jumping now
+instead of each hero having their own inventory add a common inventory at the bottom that all heros can use from
+shielded buildings should survive being attacked for for 7 days (game time), unshielded buildings should survive for 1 day, if an hero engages the monster the monster should stop attacking the building. show in header how many monsters are attacking buildings vs. heros
+keep track of all buildings in an array with state they are in including shields and health points. in logs write building # as well, on the top tabs add a new tab for buildings that will list all buildings along with the state they are in and how many inhabitants each building has. a building can have upto 10 people, repaired buildings should get 1 resident every day. destoryed buildings should loose all residents. show population in header as well.
